@@ -1,0 +1,6 @@
+export type StoredPhoto = { id: string; dataUrl: string; place: string; poseName?: string; createdAt: number };
+const DB = 'bada-photo-db'; const STORE = 'photos';
+function db() { return new Promise<IDBDatabase>((resolve, reject) => { const req = indexedDB.open(DB, 1); req.onupgradeneeded = () => req.result.createObjectStore(STORE, { keyPath: 'id' }); req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
+export async function savePhoto(photo: StoredPhoto) { const d = await db(); await new Promise<void>((resolve, reject) => { const r = d.transaction(STORE, 'readwrite').objectStore(STORE).put(photo); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error); }); d.close(); }
+export async function getPhotos(): Promise<StoredPhoto[]> { const d = await db(); const rows = await new Promise<StoredPhoto[]>((resolve, reject) => { const r = d.transaction(STORE).objectStore(STORE).getAll(); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); }); d.close(); return rows.sort((a,b) => b.createdAt-a.createdAt); }
+export async function deletePhoto(id: string) { const d = await db(); await new Promise<void>((resolve, reject) => { const r = d.transaction(STORE, 'readwrite').objectStore(STORE).delete(id); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error); }); d.close(); }
