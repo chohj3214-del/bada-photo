@@ -1,4 +1,44 @@
-import { useEffect } from 'react';
-import { preparePoseLandmarker, readCameraPose, type PoseGuide } from '../services/poseDetectionService';
-import { getCameraGuide } from '../services/cameraGuideService';
-export function PoseOverlay({ guide, active }: { guide?: PoseGuide; active: boolean }) { useEffect(() => { if (!active || !guide) return; let frame = 0; let last = 0; let cancelled = false; const update = () => { const video = document.querySelector<HTMLVideoElement>('.camera-bg video'); if (video && performance.now()-last > 220) { last=performance.now(); const reading = readCameraPose(video, performance.now(), guide); const feedback = reading ? getCameraGuide(guide, reading.score, reading.offsetX, reading.offsetY) : { message: '인물이 포즈 틀 안에 보이도록 서 주세요.', score: undefined }; const bubble = document.querySelector('.guide-bubble p'); const match = document.querySelector('.match'); if (bubble) bubble.textContent = feedback.message; if (match) match.textContent = feedback.score === undefined ? '인물 감지 중' : `포즈 ${feedback.score}% 정렬`; } if (!cancelled) frame=requestAnimationFrame(update); }; void preparePoseLandmarker().then(update).catch(() => { const bubble=document.querySelector('.guide-bubble p'); if(bubble) bubble.textContent='포즈 안내를 준비하지 못했어요. 틀 안에 맞춰 서 주세요.'; }); return () => { cancelled=true; cancelAnimationFrame(frame); }; }, [active,guide]); if (!active || !guide) return null; const [head,leftShoulder,rightShoulder,leftHand,rightHand,leftHip,rightHip,leftFoot,rightFoot] = guide.points; const headRadius = Math.max(3.8, Math.abs(leftShoulder.x-rightShoulder.x)*.34); const body = `M ${leftShoulder.x} ${leftShoulder.y} Q ${leftShoulder.x-3} ${(leftShoulder.y+leftHip.y)/2} ${leftHip.x} ${leftHip.y} L ${leftFoot.x} ${leftFoot.y} Q ${(leftFoot.x+rightFoot.x)/2} ${Math.max(leftFoot.y,rightFoot.y)+2} ${rightFoot.x} ${rightFoot.y} L ${rightHip.x} ${rightHip.y} Q ${rightShoulder.x+3} ${(rightShoulder.y+rightHip.y)/2} ${rightShoulder.x} ${rightShoulder.y} Q ${(rightShoulder.x+leftShoulder.x)/2} ${Math.min(rightShoulder.y,leftShoulder.y)-2} ${leftShoulder.x} ${leftShoulder.y}`; return <svg className="pose-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="AI 참고 인물 실루엣 포즈 안내"><g className="silhouette"><ellipse cx={head.x} cy={head.y} rx={headRadius} ry={headRadius*1.15}/><path d={`M ${leftShoulder.x} ${leftShoulder.y} Q ${leftHand.x} ${(leftShoulder.y+leftHand.y)/2} ${leftHand.x} ${leftHand.y}`}/><path d={`M ${rightShoulder.x} ${rightShoulder.y} Q ${rightHand.x} ${(rightShoulder.y+rightHand.y)/2} ${rightHand.x} ${rightHand.y}`}/><path d={body}/></g><path className="direction" d="M73 46h11m-4-4 4 4-4 4" /></svg> }
+import { useEffect, useState } from "react";
+import { preparePoseLandmarker, readCameraPose, type Point, type PoseGuide } from "../services/poseDetectionService";
+import { getCameraGuide } from "../services/cameraGuideService";
+
+function toScreen(point: Point) { return { x: 50 + point.x * 13, y: 52 + point.y * 13 }; }
+const line = (a?: Point, b?: Point) => a && b ? `${toScreen(a).x},${toScreen(a).y} ${toScreen(b).x},${toScreen(b).y}` : "";
+
+export function PoseOverlay({ guide, active }: { guide?: PoseGuide; active: boolean }) {
+  const [current, setCurrent] = useState<PoseGuide["joints"]>();
+  useEffect(() => {
+    if (!active || !guide) return;
+    let frame = 0; let last = 0; let cancelled = false;
+    const update = () => {
+      const video = document.querySelector<HTMLVideoElement>(".camera-bg video");
+      if (video && performance.now() - last > 220) {
+        last = performance.now();
+        const reading = readCameraPose(video, performance.now(), guide);
+        setCurrent(reading?.joints);
+        const feedback = reading ? getCameraGuide(guide, reading.score, reading.offsetX, reading.offsetY) : { message: "인물의 관절을 찾고 있어요. 포즈 틀 안에 서 주세요.", score: undefined };
+        const bubble = document.querySelector(".guide-bubble p"); const match = document.querySelector(".match");
+        if (bubble) bubble.textContent = feedback.message;
+        if (match) match.textContent = feedback.score === undefined ? "포즈 인식 중" : `포즈 ${feedback.score}% 정렬`;
+      }
+      if (!cancelled) frame = requestAnimationFrame(update);
+    };
+    void preparePoseLandmarker().then(update).catch(() => {
+      const bubble = document.querySelector(".guide-bubble p");
+      if (bubble) bubble.textContent = "포즈 인식을 준비하지 못했어요. 참고 사진을 보며 촬영할 수 있어요.";
+    });
+    return () => { cancelled = true; cancelAnimationFrame(frame); };
+  }, [active, guide]);
+  if (!active || !guide) return null;
+  const draw = (joints: PoseGuide["joints"], className: string) => <g className={className}>
+    {[["leftShoulder", "rightShoulder"], ["leftShoulder", "leftElbow"], ["leftElbow", "leftWrist"], ["rightShoulder", "rightElbow"], ["rightElbow", "rightWrist"], ["leftShoulder", "leftHip"], ["rightShoulder", "rightHip"], ["leftHip", "rightHip"], ["leftHip", "leftKnee"], ["leftKnee", "leftAnkle"], ["rightHip", "rightKnee"], ["rightKnee", "rightAnkle"]].map(([a, b]) => {
+      const points = line(joints[a as keyof typeof joints], joints[b as keyof typeof joints]);
+      return points ? <polyline key={`${a}-${b}`} points={points} /> : null;
+    })}
+    {Object.entries(joints).map(([name, point]) => point && <circle key={name} cx={toScreen(point).x} cy={toScreen(point).y} r="1.5" />)}
+  </g>;
+  return <svg className="pose-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="참고 포즈와 현재 인물 관절 안내">
+    {draw(guide.joints, "reference-skeleton")}
+    {current && draw(current, "current-skeleton")}
+  </svg>;
+}

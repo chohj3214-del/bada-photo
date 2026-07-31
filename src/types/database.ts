@@ -16,9 +16,9 @@ export type Database = {
         Relationships: [];
       };
       post_images: {
-        Row: { id: string; post_id: string; image_url: string; sort_order: number; created_at: string };
-        Insert: { id?: string; post_id: string; image_url: string; sort_order?: number; created_at?: string };
-        Update: Partial<{ image_url: string; sort_order: number }>;
+        Row: { id: string; post_id: string; image_url: string; sort_order: number; pose_template: Json | null; pose_status: "pending" | "ready" | "failed"; created_at: string };
+        Insert: { id?: string; post_id: string; image_url: string; sort_order?: number; pose_template?: Json | null; pose_status?: "pending" | "ready" | "failed"; created_at?: string };
+        Update: Partial<{ image_url: string; sort_order: number; pose_template: Json | null; pose_status: "pending" | "ready" | "failed" }>;
         Relationships: [];
       };
       comments: {
@@ -37,6 +37,12 @@ export type Database = {
         Row: { user_id: string; nickname: string; avatar_url: string | null; bio: string | null; created_at: string };
         Insert: { user_id: string; nickname: string; avatar_url?: string | null; bio?: string | null; created_at?: string };
         Update: Partial<{ nickname: string; avatar_url: string | null; bio: string | null }>;
+        Relationships: [];
+      };
+      saved_posts: {
+        Row: { user_id: string; post_id: string; created_at: string };
+        Insert: { user_id: string; post_id: string; created_at?: string };
+        Update: never;
         Relationships: [];
       };
     };

@@ -71,13 +71,19 @@ export async function getPublicPosts(): Promise<UploadedPhoto[]> {
   });
   const commentCounts = new Map<string, number>();
   comments.forEach(({ post_id }) => commentCounts.set(post_id, (commentCounts.get(post_id) || 0) + 1));
+  const { data: imageRows, error: imageError } = postIds.length
+    ? await supabase.from("post_images").select("id, post_id, image_url, sort_order, pose_template, pose_status").in("post_id", postIds).order("sort_order")
+    : { data: [], error: null };
+  if (imageError) throw imageError;
+  const firstImageByPost = new Map<string, typeof imageRows[number]>();
+  imageRows.forEach((image) => { if (!firstImageByPost.has(image.post_id)) firstImageByPost.set(image.post_id, image); });
   return Promise.all(rows.map(async (row) => ({
     id: `remote-${row.id}`,
-    dataUrl: await resolveImageUrl(row.image_url),
+    dataUrl: await resolveImageUrl(firstImageByPost.get(row.id)?.image_url || row.image_url),
     createdAt: new Date(row.created_at).getTime(),
     location: row.location || undefined,
     customPoseAllowed: row.custom_pose_allowed,
-    poseTemplate: (row.pose_template as PoseTemplate | null) || undefined,
+    poseTemplate: (firstImageByPost.get(row.id)?.pose_template as PoseTemplate | null) || (row.pose_template as PoseTemplate | null) || undefined,
     authorName: row.author_name,
     authorId: row.author_id || undefined,
     authorAvatar: row.author_avatar || undefined,
@@ -134,10 +140,14 @@ export async function publishPublicPost(input: PublishPostInput) {
       client_request_id: input.clientRequestId,
     }).select("id").single();
     if (postError) throw postError;
-    if (paths.length > 1) {
-      const { error: imagesError } = await supabase.from("post_images").insert(paths.map((image_url, sort_order) => ({ post_id: post.id, image_url, sort_order })));
-      if (imagesError) throw imagesError;
-    }
+    const { error: imagesError } = await supabase.from("post_images").insert(paths.map((image_url, sort_order) => ({
+      post_id: post.id,
+      image_url,
+      sort_order,
+      pose_template: (input.photos[sort_order]?.poseTemplate as Json | undefined) || null,
+      pose_status: (input.customPoseAllowed ? (input.photos[sort_order]?.poseTemplate ? "ready" : "failed") : "pending") as "pending" | "ready" | "failed",
+    })));
+    if (imagesError) throw imagesError;
     return post.id;
   } catch (error) {
     if (paths.length) await supabase.storage.from(bucket).remove(paths);
@@ -184,6 +194,84 @@ export async function togglePublicLike(id: string) {
   const { count, error: countError } = await supabase.from("post_likes").select("*", { count: "exact", head: true }).eq("post_id", postId);
   if (countError) throw countError;
   return { liked: !current, count: count || 0 };
+}
+
+export async function getSavedPostIds() {
+  const user = await requireUser();
+  const { data, error } = await supabase
+    .from("saved_posts")
+    .select("post_id")
+    .eq("user_id", user.id);
+  if (error) throw error;
+  return new Set(data.map((row) => row.post_id));
+}
+
+/** Returns only records that are still visible through the posts RLS policy. */
+export async function getSavedPosts(): Promise<UploadedPhoto[]> {
+  const user = await requireUser();
+  const { data: saved, error } = await supabase
+    .from("saved_posts")
+    .select("post_id, created_at")
+    .eq("user_id", user.id)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  if (!saved.length) return [];
+  const visiblePosts = await getPublicPosts();
+  const byId = new Map(visiblePosts.map((post) => [remoteId(post.id), post]));
+  return saved.map((row) => byId.get(row.post_id)).filter((post): post is UploadedPhoto => Boolean(post));
+}
+
+export async function toggleSavedPost(id: string) {
+  const user = await requireUser();
+  const postId = remoteId(id);
+  const { data: existing, error: lookupError } = await supabase
+    .from("saved_posts")
+    .select("post_id")
+    .eq("user_id", user.id)
+    .eq("post_id", postId)
+    .maybeSingle();
+  if (lookupError) throw lookupError;
+  const { error } = existing
+    ? await supabase.from("saved_posts").delete().eq("user_id", user.id).eq("post_id", postId)
+    : await supabase.from("saved_posts").insert({ user_id: user.id, post_id: postId });
+  if (error) throw error;
+  return { saved: !existing };
+}
+
+/** Best-effort owner-only cache. RLS intentionally rejects updates to another person's image. */
+export async function savePostImagePoseTemplate(id: string, poseTemplate: PoseTemplate | null) {
+  await requireUser();
+  const postId = remoteId(id);
+  const { data: image, error: imageError } = await supabase
+    .from("post_images")
+    .select("id")
+    .eq("post_id", postId)
+    .order("sort_order")
+    .limit(1)
+    .maybeSingle();
+  if (imageError || !image) throw imageError ?? new Error("게시물 이미지를 찾지 못했어요.");
+  const { error } = await supabase.from("post_images").update({
+    pose_template: (poseTemplate as Json | null),
+    pose_status: poseTemplate ? "ready" : "failed",
+  }).eq("id", image.id);
+  if (error) throw error;
+}
+
+/** Uses the authenticated Storage API when a signed URL cannot be decoded by MediaPipe/CORS. */
+export async function downloadPostReferenceImage(id: string): Promise<Blob> {
+  await requireUser();
+  const postId = remoteId(id);
+  const { data: image, error: imageError } = await supabase
+    .from("post_images")
+    .select("image_url")
+    .eq("post_id", postId)
+    .order("sort_order")
+    .limit(1)
+    .maybeSingle();
+  if (imageError || !image) throw imageError ?? new Error("참고 사진을 찾지 못했어요.");
+  const { data, error } = await supabase.storage.from(bucket).download(image.image_url);
+  if (error || !data) throw error ?? new Error("참고 사진을 불러오지 못했어요.");
+  return data;
 }
 
 /** One feed subscription per mounted Home screen. The caller refreshes from DB, not from event payloads. */

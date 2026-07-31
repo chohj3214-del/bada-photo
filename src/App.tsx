@@ -8,10 +8,8 @@ import {
   Grid2X2,
   Heart,
   ImagePlus,
-  MapPin,
   MessageCircle,
   Moon,
-  MoreHorizontal,
   RotateCw,
   Search,
   ShieldAlert,
@@ -42,11 +40,16 @@ import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
 import {
   deletePublicComment,
+  downloadPostReferenceImage,
+  getSavedPostIds,
+  getSavedPosts,
   getPublicComments,
   getPublicPosts,
   publishPublicComment,
   publishPublicPost,
+  savePostImagePoseTemplate,
   subscribeToSocialChanges,
+  toggleSavedPost,
   togglePublicLike,
 } from "./services/supabaseService";
 import {
@@ -87,26 +90,37 @@ function App() {
   const [place, setPlace] = useState("자유 촬영");
   const [referenceImage, setReferenceImage] = useState("");
   const [saved, setSaved] = useState<StoredPhoto[]>([]);
+  const [savedPosts, setSavedPosts] = useState<UploadedPhoto[]>([]);
+  const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [pendingDetail, setPendingDetail] = useState<UploadedPhoto | null>(null);
   const [uploaded, setUploaded] = useState<UploadedPhoto[]>([]);
   const [browseMode, setBrowseMode] = useState(false);
   const [guideClosing, setGuideClosing] = useState(false);
   const [draft, setDraft] = useState<PostDraft | null>(null);
   const publishLock = useRef(false);
+  const cameraAnalysisRequest = useRef(0);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
   );
-  const openCamera = async (p = "자유 촬영", image = "") => {
+  const openCamera = async (p = "자유 촬영", image = "", storedGuide?: PoseGuide) => {
+    const requestId = ++cameraAnalysisRequest.current;
     setPlace(p);
     setReferenceImage(image);
-    setGuide(undefined);
+    setGuide(storedGuide);
     setScreen("camera");
-    if (p === "자유 촬영") return;
+    if (p === "자유 촬영" || storedGuide) return;
     void (async () => {
       try {
-        const next = p.startsWith("uploaded-") && image
-          ? await analyseUploadedPose(image)
+        const source = p.startsWith("uploaded-remote-")
+          ? await downloadPostReferenceImage(p).catch(() => image)
+          : image;
+        const next = source
+          ? await analyseUploadedPose(source, "참고 사진 포즈")
           : await analyseReferencePose(p);
-        if (next) setGuide(next);
+        if (next && requestId === cameraAnalysisRequest.current) {
+          setGuide(next);
+          if (p.startsWith("uploaded-remote-")) void savePostImagePoseTemplate(p, next).catch(() => undefined);
+        }
       } catch {
         // A reference image can still be used when local pose analysis is unavailable.
       }
@@ -120,10 +134,16 @@ function App() {
     const [local, remote] = await Promise.all([getUploads(), getPublicPosts().catch(() => [])]);
     setUploaded([...local, ...remote]);
   }, []);
+  const refreshSavedPosts = useCallback(async () => {
+    const [ids, posts] = await Promise.all([getSavedPostIds(), getSavedPosts()]);
+    setSavedPostIds(ids);
+    setSavedPosts(posts);
+  }, []);
   useEffect(() => {
     void refresh();
     void refreshUploads().catch(() => setUploaded([]));
-  }, [refreshUploads]);
+    void refreshSavedPosts().catch(() => { setSavedPostIds(new Set()); setSavedPosts([]); });
+  }, [refreshSavedPosts, refreshUploads]);
   const capture = async (data: string) => {
     const filename = `bada-photo-${Date.now()}.jpg`;
     const blob = await (await fetch(data)).blob();
@@ -224,6 +244,10 @@ function App() {
             setScreen("guide");
           }}
           onRefreshSocial={refreshUploads}
+          savedPostIds={savedPostIds}
+          onToggleSaved={async (id) => { const result = await toggleSavedPost(id); await refreshSavedPosts(); return result; }}
+          initialDetail={pendingDetail}
+          onInitialDetailShown={() => setPendingDetail(null)}
         />
       )}{" "}
       {screen === "guide" && <Guide closing={guideClosing} onClose={closeGuide} />}
@@ -231,7 +255,6 @@ function App() {
       {screen === "post" && draft && <NewPost draft={draft} onChange={setDraft} onBack={() => setScreen("editor")} onPublish={() => void publishDraft()} />}
       {screen === "camera" && (
         <CameraScreen
-          place={place}
           guide={guide}
           referenceImage={referenceImage}
           latestPhoto={saved[0]?.dataUrl}
@@ -249,6 +272,8 @@ function App() {
             await deletePhoto(id);
             await refresh();
           }}
+          savedPosts={savedPosts}
+          onOpenSavedPost={(post) => { setPendingDetail(post); setScreen("home"); }}
         />
       )}{" "}
       {screen === "my" && (
@@ -282,8 +307,12 @@ function Home({
   onBrowseModeChange,
   onGuide,
   onRefreshSocial,
+  savedPostIds,
+  onToggleSaved,
+  initialDetail,
+  onInitialDetailShown,
 }: {
-  onCustom: (p: string, image?: string) => void;
+  onCustom: (p: string, image?: string, storedGuide?: PoseGuide) => void;
   uploaded: UploadedPhoto[];
   onUpload: (images: string[]) => void;
   onRemoveUpload: (id: string) => void | Promise<void>;
@@ -292,6 +321,10 @@ function Home({
   onBrowseModeChange: (active: boolean) => void;
   onGuide: () => void;
   onRefreshSocial: () => void;
+  savedPostIds: Set<string>;
+  onToggleSaved: (id: string) => Promise<{ saved: boolean }>;
+  initialDetail: UploadedPhoto | null;
+  onInitialDetailShown: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -320,7 +353,28 @@ function Home({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsClosing, setCommentsClosing] = useState(false);
   const [captionExpanded, setCaptionExpanded] = useState(false);
+  const [savingPost, setSavingPost] = useState(false);
+  const [saveOverride, setSaveOverride] = useState<boolean | undefined>();
+  const [saveNotice, setSaveNotice] = useState("");
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
+  useEffect(() => {
+    if (!initialDetail || detailClosing) return;
+    setDetail({
+      id: `uploaded-${initialDetail.id}`,
+      account: `@${initialDetail.authorName || nickname}`,
+      image: initialDetail.dataUrl,
+      customAllowed: initialDetail.customPoseAllowed === true,
+      likeCount: initialDetail.likesCount || 0,
+      commentCount: initialDetail.commentsCount || 0,
+      commentsAllowed: initialDetail.commentsAllowed !== false,
+      caption: initialDetail.caption,
+      hashtags: initialDetail.hashtags || [],
+    });
+    setCaptionExpanded(false);
+    setCommentsOpen(false);
+    void loadRemoteComments(`uploaded-${initialDetail.id}`);
+    onInitialDetailShown();
+  }, [detailClosing, initialDetail, nickname, onInitialDetailShown]);
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
     void subscribeToSocialChanges(onRefreshSocial).then((cleanup) => { unsubscribe = cleanup; }).catch(() => undefined);
@@ -374,6 +428,7 @@ function Home({
       [id]: rows.map((row) => ({ id: row.id, text: row.content, author: row.isOwn ? "me" : "other" })),
     }));
   };
+  const uploadedPoseByDisplayId = new Map(uploaded.map((photo) => [`uploaded-${photo.id}`, photo.poseTemplate]));
   const displayCards: [string, string, string, number, string, boolean, number, boolean, string | undefined, string[]][] = [
     ...uploaded.map(
       (u) =>
@@ -456,7 +511,7 @@ function Home({
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed, caption, hashtags }); setCaptionExpanded(false); setCommentsOpen(false); void loadRemoteComments(id); }
+                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed, caption, hashtags }); setCaptionExpanded(false); setSaveOverride(undefined); setSaveNotice(""); setCommentsOpen(false); void loadRemoteComments(id); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -485,7 +540,7 @@ function Home({
                 </button>
               )}
               {customAllowed && <button
-                onClick={() => onCustom(id, img)}
+                onClick={() => onCustom(id, img, uploadedPoseByDisplayId.get(id))}
                 aria-label={`${account} 사진으로 촬영하기`}
               >
                 커스텀
@@ -510,9 +565,16 @@ function Home({
           <div className="detail-actions">
             <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{detail.id.startsWith("uploaded-remote-") ? detail.likeCount : detail.likeCount + (likes[detail.id] ? 1 : 0)}</span></button>
             <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); void loadRemoteComments(detail.id); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length || detail.commentCount}</span></button>
-            <button onClick={() => window.alert("사진을 저장했어요.")} aria-label="사진 저장"><FolderHeart /><span>저장</span></button>
-            {detail.customAllowed && <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image)} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>}
+            <button onClick={() => {
+              if (!detail.id.startsWith("uploaded-remote-")) { setSaveNotice("Supabase 게시물만 저장할 수 있어요."); return; }
+              const postId = detail.id.replace(/^uploaded-remote-/, "");
+              const before = saveOverride ?? savedPostIds.has(postId);
+              setSavingPost(true); setSaveOverride(!before); setSaveNotice("");
+              void onToggleSaved(detail.id).then((result) => { setSaveOverride(result.saved); setSaveNotice(result.saved ? "저장했어요." : "저장을 취소했어요."); }).catch(() => { setSaveOverride(before); setSaveNotice("저장하지 못했어요. 다시 시도해 주세요."); }).finally(() => setSavingPost(false));
+            }} aria-label="게시물 저장 또는 저장 취소" aria-pressed={saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))} disabled={savingPost}><FolderHeart fill={(saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))) ? "currentColor" : "none"}/><span>{(saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))) ? "저장됨" : "저장"}</span></button>
+            {detail.customAllowed && <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image, uploadedPoseByDisplayId.get(detail.id))} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>}
           </div>
+          {saveNotice && <p className="save-notice" role="status">{saveNotice}</p>}
           {commentsOpen && <div className={`sheet-layer ${commentsClosing ? "is-closing" : ""}`} onClick={closeComments}>
         <section className="comment-sheet" onClick={(event) => event.stopPropagation()}>
           <button
@@ -700,7 +762,6 @@ function Nav({
   );
 }
 function CameraScreen({
-  place,
   guide,
   referenceImage,
   latestPhoto,
@@ -708,7 +769,6 @@ function CameraScreen({
   onCapture,
   onGallery,
 }: {
-  place: string;
   guide?: PoseGuide;
   referenceImage: string;
   latestPhoto?: string;
@@ -825,14 +885,8 @@ function CameraScreen({
           <button className={torchOn ? "flash-on" : ""} onClick={() => void toggleTorch()} aria-label="플래시 켜기 또는 끄기" aria-pressed={torchOn} disabled={torchUnsupported}>
             <Zap />
           </button>
-          <button aria-label="추가 메뉴">
-            <MoreHorizontal />
-          </button>
         </div>
         {flashNotice && <p className="flash-notice" role="status">{flashNotice}</p>}
-        <div className="camera-place">
-          <MapPin /> {place}
-        </div>
         <div className="level" aria-label="수평계">
           <i />
           <i />
@@ -934,11 +988,15 @@ function Saved({
   onHome,
   onCamera,
   onDelete,
+  savedPosts,
+  onOpenSavedPost,
 }: {
   photos: StoredPhoto[];
   onHome: () => void;
   onCamera: () => void;
   onDelete: (id: string) => void;
+  savedPosts: UploadedPhoto[];
+  onOpenSavedPost: (post: UploadedPhoto) => void;
 }) {
   return (
     <section className="page saved page-enter">
@@ -976,6 +1034,10 @@ function Saved({
           </button>
         </div>
       )}
+      {savedPosts.length > 0 && <section className="saved-custom-section">
+        <h2>저장한 커스텀 사진</h2>
+        <div className="saved-custom-grid">{savedPosts.map((post) => <button key={post.id} onClick={() => onOpenSavedPost(post)} aria-label={`${post.authorName || "사용자"}의 저장한 커스텀 사진 열기`}><img src={post.dataUrl} alt="저장한 커스텀 사진" /><span>@{post.authorName || "바다사진 사용자"}</span></button>)}</div>
+      </section>}
     </section>
   );
 }

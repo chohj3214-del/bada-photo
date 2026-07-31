@@ -1,64 +1,126 @@
-import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
-export type Point = { x: number; y: number };
-export type PoseGuide = { points: Point[]; label: string };
-export type PoseTemplate = PoseGuide;
-export type PoseReading = { score: number; offsetX: number; offsetY: number };
-let landmarker: PoseLandmarker | null = null;
-let loading: Promise<PoseLandmarker> | null = null;
-let imageLandmarker: PoseLandmarker | null = null;
+import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
 
-export async function preparePoseLandmarker() {
-  if (landmarker) return landmarker;
-  if (!loading) loading = (async () => {
-    const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm');
-    landmarker = await PoseLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task' }, runningMode: 'VIDEO', numPoses: 1 });
-    return landmarker;
-  })();
-  return loading;
-}
-async function prepareImageLandmarker() {
-  if (imageLandmarker) return imageLandmarker;
-  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm');
-  imageLandmarker = await PoseLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task' }, runningMode: 'IMAGE', numPoses: 1 });
-  return imageLandmarker;
-}
-export async function analyseUploadedPose(dataUrl: string): Promise<PoseTemplate | null> {
-  const image = new Image(); image.src = dataUrl; await image.decode();
-  const detector = await prepareImageLandmarker();
-  const landmarks = detector.detect(image).landmarks[0];
-  const indexes = [11,12,13,14,15,16,23,24,25,26,27,28];
-  if (!landmarks || indexes.filter((index) => (landmarks[index].visibility ?? 0) >= .45).length < 8) return null;
-  const shoulder = { x: (landmarks[11].x + landmarks[12].x) / 2, y: (landmarks[11].y + landmarks[12].y) / 2 };
-  const scale = Math.max(Math.hypot(landmarks[11].x - landmarks[12].x, landmarks[11].y - landmarks[12].y), .05);
-  const points = indexes.map((index) => ({ x: ((landmarks[index].x - shoulder.x) / scale) * 18 + 50, y: ((landmarks[index].y - shoulder.y) / scale) * 18 + 40 }));
-  return { label: '업로드한 사진의 포즈', points };
-}
-
-export function readCameraPose(video: HTMLVideoElement, timestamp: number, guide: PoseGuide): PoseReading | null {
-  if (!landmarker || video.readyState < 2) return null;
-  const pose = landmarker.detectForVideo(video, timestamp).landmarks[0];
-  if (!pose) return null;
-  const indexes = [0, 11, 12, 15, 16, 23, 24, 27, 28];
-  const current = indexes.map(index => ({ x: pose[index].x * 100, y: pose[index].y * 100 }));
-  const center = (points: Point[]) => ({ x: points.reduce((sum,p)=>sum+p.x,0)/points.length, y: points.reduce((sum,p)=>sum+p.y,0)/points.length });
-  const currentCenter = center(current); const guideCenter = center(guide.points);
-  const min = (points: Point[], axis: 'x'|'y') => Math.min(...points.map(p=>p[axis])); const max = (points: Point[], axis: 'x'|'y') => Math.max(...points.map(p=>p[axis]));
-  const currentScale = Math.max(max(current,'x')-min(current,'x'), max(current,'y')-min(current,'y'), 1);
-  const guideScale = Math.max(max(guide.points,'x')-min(guide.points,'x'), max(guide.points,'y')-min(guide.points,'y'), 1);
-  const normalized = current.map(p => ({ x: ((p.x-currentCenter.x)/currentScale)*guideScale+guideCenter.x, y: ((p.y-currentCenter.y)/currentScale)*guideScale+guideCenter.y }));
-  const poseError = normalized.reduce((sum,p,index)=>sum+Math.hypot(p.x-guide.points[index].x,p.y-guide.points[index].y),0)/normalized.length;
-  const positionError = Math.hypot(currentCenter.x-guideCenter.x,currentCenter.y-guideCenter.y);
-  return { score: Math.max(0, Math.min(100, Math.round(100-poseError*2.4-positionError*.8))), offsetX: currentCenter.x-guideCenter.x, offsetY: currentCenter.y-guideCenter.y };
-}
-// MediaPipe adapter boundary: MVP uses a stable device-local guide until the model asset is bundled.
-export const referenceGuides: Record<string, PoseGuide> = {
-  'standing-wave': { label: '파도를 바라보는 서 있는 포즈', points: [{x:63,y:31},{x:59,y:39},{x:68,y:40},{x:58,y:53},{x:69,y:54},{x:61,y:64},{x:68,y:64},{x:62,y:86},{x:70,y:86}] },
-  'sitting-beach': { label: '앉아서 바다를 바라보는 포즈', points: [{x:36,y:46},{x:32,y:53},{x:42,y:54},{x:25,y:73},{x:48,y:72},{x:37,y:65},{x:50,y:70},{x:58,y:77},{x:83,y:73}] },
-  'side-standing': { label: '옆모습으로 바다를 바라보는 포즈', points: [{x:52,y:27},{x:49,y:36},{x:56,y:37},{x:47,y:53},{x:58,y:54},{x:50,y:62},{x:57,y:63},{x:50,y:86},{x:58,y:87}] },
-  'wing-pose': { label: '팔을 펼친 기울기 포즈', points: [{x:35,y:39},{x:31,y:48},{x:43,y:43},{x:16,y:70},{x:88,y:31},{x:38,y:65},{x:51,y:61},{x:43,y:86},{x:58,y:85}] },
-  '광안리': { label: '난간을 바라보는 포즈', points: [{x:50,y:19},{x:43,y:31},{x:57,y:31},{x:40,y:47},{x:60,y:47},{x:43,y:62},{x:57,y:62},{x:41,y:82},{x:59,y:82}] },
-  '해운대': { label: '바다를 향해 손을 든 포즈', points: [{x:51,y:19},{x:44,y:31},{x:58,y:30},{x:41,y:45},{x:66,y:20},{x:43,y:62},{x:57,y:62},{x:43,y:83},{x:58,y:83}] },
-  '송도': { label: '풍경 중심 구도', points: [{x:50,y:25},{x:45,y:36},{x:55,y:36},{x:43,y:52},{x:57,y:52},{x:44,y:66},{x:56,y:66},{x:42,y:83},{x:58,y:83}] },
-  '청사포': { label: '바다를 바라보는 포즈', points: [{x:50,y:22},{x:44,y:34},{x:56,y:34},{x:40,y:49},{x:60,y:49},{x:44,y:63},{x:56,y:63},{x:42,y:83},{x:58,y:83}] }
+export const POSE_JOINTS = [
+  "leftShoulder", "rightShoulder", "leftElbow", "rightElbow", "leftWrist", "rightWrist",
+  "leftHip", "rightHip", "leftKnee", "rightKnee", "leftAnkle", "rightAnkle",
+] as const;
+export type PoseJoint = (typeof POSE_JOINTS)[number];
+export type Point = { x: number; y: number; visibility?: number };
+export type PoseGuide = {
+  version?: 1;
+  label: string;
+  /** Body-centre / shoulder-width normalized coordinates; contains no facial landmarks. */
+  joints: Partial<Record<PoseJoint, Point>>;
 };
-export async function analyseReferencePose(place: string) { return referenceGuides[place] ?? null; }
+export type PoseTemplate = PoseGuide;
+export type PoseReading = { score: number; offsetX: number; offsetY: number; joints: PoseGuide["joints"] };
+
+const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm";
+const landmarkIndex: Record<PoseJoint, number> = {
+  leftShoulder: 11, rightShoulder: 12, leftElbow: 13, rightElbow: 14, leftWrist: 15, rightWrist: 16,
+  leftHip: 23, rightHip: 24, leftKnee: 25, rightKnee: 26, leftAnkle: 27, rightAnkle: 28,
+};
+let videoLandmarker: PoseLandmarker | null = null;
+let videoLoading: Promise<PoseLandmarker> | null = null;
+let imageLandmarker: PoseLandmarker | null = null;
+let imageLoading: Promise<PoseLandmarker> | null = null;
+
+async function createLandmarker(runningMode: "IMAGE" | "VIDEO", delegate: "GPU" | "CPU") {
+  const vision = await FilesetResolver.forVisionTasks(WASM);
+  return PoseLandmarker.createFromOptions(vision, {
+    baseOptions: { modelAssetPath: MODEL, delegate }, runningMode, numPoses: 1,
+  });
+}
+async function withCpuFallback(runningMode: "IMAGE" | "VIDEO") {
+  try { return await createLandmarker(runningMode, "GPU"); }
+  catch { return createLandmarker(runningMode, "CPU"); }
+}
+export async function preparePoseLandmarker() {
+  if (videoLandmarker) return videoLandmarker;
+  if (!videoLoading) videoLoading = withCpuFallback("VIDEO").then((model) => (videoLandmarker = model)).catch((error) => { videoLoading = null; throw error; });
+  return videoLoading;
+}
+async function prepareImageLandmarker(forceCpu = false) {
+  if (imageLandmarker) return imageLandmarker;
+  if (!imageLoading) imageLoading = (forceCpu ? createLandmarker("IMAGE", "CPU") : withCpuFallback("IMAGE"))
+    .then((model) => (imageLandmarker = model)).catch((error) => { imageLoading = null; throw error; });
+  return imageLoading;
+}
+function resetImageModel() { imageLandmarker?.close(); imageLandmarker = null; imageLoading = null; }
+function normalized(raw: { x: number; y: number; visibility?: number }[], label: string): PoseTemplate | null {
+  const visible = (joint: PoseJoint) => raw[landmarkIndex[joint]]?.visibility ?? 0;
+  const required = POSE_JOINTS.filter((joint) => visible(joint) >= 0.45);
+  if (required.length < 7 || (visible("leftShoulder") < .45 && visible("rightShoulder") < .45)) return null;
+  const leftShoulder = raw[11], rightShoulder = raw[12], leftHip = raw[23], rightHip = raw[24];
+  const shoulderCentre = { x: (leftShoulder.x + rightShoulder.x) / 2, y: (leftShoulder.y + rightShoulder.y) / 2 };
+  const hipCentre = { x: (leftHip.x + rightHip.x) / 2, y: (leftHip.y + rightHip.y) / 2 };
+  const centre = (visible("leftHip") >= .3 && visible("rightHip") >= .3) ? hipCentre : shoulderCentre;
+  const shoulderWidth = Math.hypot(leftShoulder.x - rightShoulder.x, leftShoulder.y - rightShoulder.y);
+  const torso = Math.hypot(shoulderCentre.x - hipCentre.x, shoulderCentre.y - hipCentre.y);
+  const scale = Math.max(shoulderWidth, torso * .72, .035);
+  const joints: PoseGuide["joints"] = {};
+  POSE_JOINTS.forEach((joint) => {
+    const item = raw[landmarkIndex[joint]];
+    if (item && (item.visibility ?? 0) >= .35) joints[joint] = { x: (item.x - centre.x) / scale, y: (item.y - centre.y) / scale, visibility: item.visibility };
+  });
+  return Object.keys(joints).length >= 7 ? { version: 1, label, joints } : null;
+}
+async function sourceToBitmap(source: string | Blob): Promise<ImageBitmap> {
+  const response = typeof source === "string" ? await fetch(source, { mode: "cors", credentials: "omit" }) : null;
+  if (response && !response.ok) throw new Error("참고 사진을 불러오지 못했어요.");
+  const blob: Blob = response ? await response.blob() : source as Blob;
+  // from-image applies EXIF orientation before the static-image detector receives pixels.
+  return createImageBitmap(blob, { imageOrientation: "from-image" });
+}
+export async function analyseUploadedPose(source: string | Blob, label = "업로드한 사진 포즈"): Promise<PoseTemplate | null> {
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await sourceToBitmap(source);
+    const result = (await prepareImageLandmarker()).detect(bitmap);
+    return normalized(result.landmarks[0] || [], label);
+  } catch {
+    // activeTexture/WebGL failures are retried once with a fresh CPU/WASM model.
+    try {
+      resetImageModel();
+      if (!bitmap) bitmap = await sourceToBitmap(source);
+      const result = (await prepareImageLandmarker(true)).detect(bitmap);
+      return normalized(result.landmarks[0] || [], label);
+    } catch { return null; }
+  } finally { bitmap?.close(); }
+}
+function mirrored(joints: PoseGuide["joints"]): PoseGuide["joints"] {
+  return Object.fromEntries(Object.entries(joints).map(([key, point]) => [key, point ? { ...point, x: -point.x } : point])) as PoseGuide["joints"];
+}
+function poseDistance(current: PoseGuide["joints"], reference: PoseGuide["joints"]) {
+  const values = POSE_JOINTS.flatMap((joint) => {
+    const a = current[joint], b = reference[joint];
+    if (!a || !b || (a.visibility ?? 1) < .4 || (b.visibility ?? 1) < .4) return [];
+    return [Math.hypot(a.x - b.x, a.y - b.y) * Math.min(a.visibility ?? 1, b.visibility ?? 1)];
+  });
+  return values.length >= 6 ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+}
+export function readCameraPose(video: HTMLVideoElement, timestamp: number, guide: PoseGuide): PoseReading | null {
+  if (!videoLandmarker || video.readyState < 2) return null;
+  try {
+    const detected = videoLandmarker.detectForVideo(video, timestamp).landmarks[0];
+    const current = detected ? normalized(detected, "현재 인물") : null;
+    if (!current) return null;
+    const direct = poseDistance(current.joints, guide.joints);
+    const flipped = poseDistance(current.joints, mirrored(guide.joints));
+    const distance = [direct, flipped].filter((value): value is number => value !== null).sort((a, b) => a - b)[0];
+    if (distance === undefined) return null;
+    const score = Math.round(Math.max(0, Math.min(100, 100 - distance * 32)));
+    const shoulder = current.joints.leftShoulder || current.joints.rightShoulder;
+    return { score, offsetX: shoulder?.x ?? 0, offsetY: shoulder?.y ?? 0, joints: current.joints };
+  } catch {
+    videoLandmarker.close(); videoLandmarker = null; videoLoading = null;
+    void preparePoseLandmarker();
+    return null;
+  }
+}
+
+export const referenceGuides: Record<string, PoseGuide> = {};
+export async function analyseReferencePose(_place: string, source?: string) {
+  return source ? analyseUploadedPose(source, "참고 사진 포즈") : null;
+}
