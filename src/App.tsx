@@ -56,6 +56,7 @@ function App() {
   const [referenceImage, setReferenceImage] = useState("");
   const [saved, setSaved] = useState<StoredPhoto[]>([]);
   const [uploaded, setUploaded] = useState<string[]>([]);
+  const [browseMode, setBrowseMode] = useState(false);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
   );
@@ -111,6 +112,7 @@ function App() {
           }
           dark={dark}
           onToggleDark={toggleDark}
+          onBrowseModeChange={setBrowseMode}
         />
       )}{" "}
       {screen === "camera" && (
@@ -138,7 +140,7 @@ function App() {
       {screen === "my" && (
         <My onHome={() => setScreen("home")} onCamera={() => openCamera()} />
       )}{" "}
-      {["home", "saved", "my"].includes(screen) && (
+      {["saved", "my"].includes(screen) || (screen === "home" && !browseMode) ? (
         <Nav
           goHome={() => setScreen("home")}
           goSaved={() => {
@@ -148,7 +150,7 @@ function App() {
           goMy={() => setScreen("my")}
           onCamera={() => openCamera()}
         />
-      )}
+      ) : null}
     </main>
   );
 }
@@ -163,6 +165,7 @@ function Home({
   onRemoveUpload,
   dark,
   onToggleDark,
+  onBrowseModeChange,
 }: {
   onCustom: (p: string, image?: string) => void;
   uploaded: string[];
@@ -170,6 +173,7 @@ function Home({
   onRemoveUpload: (u: string) => void;
   dark: boolean;
   onToggleDark: () => void;
+  onBrowseModeChange: (active: boolean) => void;
 }) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -264,7 +268,7 @@ function Home({
           </button>
         </div>
       )}
-      <section className="hero">
+      {!showAll && <section className="hero">
         <div>
           <h1>
             오늘은 어떤 바다를
@@ -276,12 +280,12 @@ function Home({
           </span>
         </div>
         <SeaLionMascot />
-      </section>
+      </section>}
       <div className="section-title">
         <h2>
           <Flame /> 커스텀 사진
         </h2>
-        <button onClick={() => { setShowAll((value) => !value); setSearching((value) => !showAll ? true : value); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
+        <button onClick={() => { const next = !showAll; setShowAll(next); setSearching(next); onBrowseModeChange(next); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
         {displayCards.map(([id, account, img, count]) => (
@@ -305,7 +309,7 @@ function Home({
                 <span>{count + (likes[id] ? 1 : 0)}</span>
               </button>
             </div>
-              {!showAll && <div className="card-bottom">
+              <div className="card-bottom">
                 {id.startsWith("uploaded-") && (
                 <button
                   className="remove-upload"
@@ -321,7 +325,7 @@ function Home({
               >
                 커스텀
               </button>
-              </div>}
+              </div>
           </article>
         ))}
       </div>
