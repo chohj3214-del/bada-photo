@@ -42,11 +42,12 @@ declare global {
   }
 }
 type Screen = "home" | "camera" | "saved" | "my";
+const assetBase = import.meta.env.BASE_URL;
 const cards: [string, string, string, number][] = [
-  ["standing-wave", "@seaside.jun", "/custom-photos/standing-wave.jpg", 245],
-  ["sitting-beach", "@ocean.day", "/custom-photos/sitting-beach.jpg", 328],
-  ["side-standing", "@bluewalk", "/custom-photos/side-standing.jpg", 186],
-  ["wing-pose", "@summerframe", "/custom-photos/wing-pose.jpg", 219],
+  ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
+  ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
+  ["side-standing", "@bluewalk", `${assetBase}custom-photos/side-standing.jpg`, 186],
+  ["wing-pose", "@summerframe", `${assetBase}custom-photos/wing-pose.jpg`, 219],
 ];
 function App() {
   const [screen, setScreen] = useState<Screen>("home");
