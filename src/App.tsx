@@ -88,14 +88,19 @@ function App() {
   const openCamera = async (p = "자유 촬영", image = "") => {
     setPlace(p);
     setReferenceImage(image);
-    setGuide(
-      p === "자유 촬영"
-        ? undefined
-        : (p.startsWith("uploaded-") && image
-          ? (await analyseUploadedPose(image)) ?? undefined
-          : (await analyseReferencePose(p)) ?? undefined),
-    );
+    setGuide(undefined);
     setScreen("camera");
+    if (p === "자유 촬영") return;
+    void (async () => {
+      try {
+        const next = p.startsWith("uploaded-") && image
+          ? await analyseUploadedPose(image)
+          : await analyseReferencePose(p);
+        if (next) setGuide(next);
+      } catch {
+        // A reference image can still be used when local pose analysis is unavailable.
+      }
+    })();
   };
   const refresh = () =>
     getPhotos()
