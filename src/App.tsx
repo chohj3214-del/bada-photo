@@ -50,6 +50,7 @@ import {
 declare global {
   interface MediaTrackConstraintSet {
     zoom?: number;
+    torch?: boolean;
   }
 }
 type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my" | "editor" | "post";
@@ -635,6 +636,8 @@ function CameraScreen({
   const [facing, setFacing] = useState<"environment" | "user">("environment");
   const [zoom, setZoom] = useState(1);
   const [permissionAttempt, setPermissionAttempt] = useState(0);
+  const [torchOn, setTorchOn] = useState(false);
+  const [flashNotice, setFlashNotice] = useState("");
   const cameraGuide = getCameraGuide(guide);
   useEffect(() => {
     let stream: MediaStream;
@@ -667,6 +670,23 @@ function CameraScreen({
       } as MediaTrackConstraints);
     } catch {
       /* 미지원 기기는 화면 확대를 사용 */
+    }
+  };
+  const toggleTorch = async () => {
+    const track = (video.current?.srcObject as MediaStream | undefined)?.getVideoTracks()[0];
+    const capabilities = track?.getCapabilities?.() as MediaTrackCapabilities & { torch?: boolean } | undefined;
+    if (!track || !capabilities?.torch) {
+      setFlashNotice("이 기기에서는 플래시를 지원하지 않아요.");
+      window.setTimeout(() => setFlashNotice(""), 2200);
+      return;
+    }
+    try {
+      const next = !torchOn;
+      await track.applyConstraints({ advanced: [{ torch: next }] } as MediaTrackConstraints);
+      setTorchOn(next);
+    } catch {
+      setFlashNotice("플래시를 켜지 못했어요.");
+      window.setTimeout(() => setFlashNotice(""), 2200);
     }
   };
   const snap = () => {
@@ -711,13 +731,14 @@ function CameraScreen({
           >
             <Sparkles /> AI 가이드 {guideOn ? "ON" : "OFF"}
           </button>
-          <button aria-label="플래시">
+          <button className={torchOn ? "flash-on" : ""} onClick={() => void toggleTorch()} aria-label="플래시 켜기 또는 끄기" aria-pressed={torchOn}>
             <Zap />
           </button>
           <button aria-label="추가 메뉴">
             <MoreHorizontal />
           </button>
         </div>
+        {flashNotice && <p className="flash-notice" role="status">{flashNotice}</p>}
         <div className="camera-place">
           <MapPin /> {place}
         </div>
