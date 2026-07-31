@@ -675,9 +675,8 @@ function CameraScreen({
   };
   const toggleTorch = async () => {
     const track = (video.current?.srcObject as MediaStream | undefined)?.getVideoTracks()[0];
-    const capabilities = track?.getCapabilities?.() as MediaTrackCapabilities & { torch?: boolean } | undefined;
-    if (!track || !capabilities?.torch) {
-      setFlashNotice("해당 기기에는 플래시 기능이 작동하지 않습니다.");
+    if (!track) {
+      setFlashNotice("카메라를 연결한 뒤 플래시를 사용할 수 있어요.");
       setTorchUnsupported(true);
       window.setTimeout(() => setFlashNotice(""), 2200);
       return;
@@ -687,7 +686,8 @@ function CameraScreen({
       await track.applyConstraints({ advanced: [{ torch: next }] } as MediaTrackConstraints);
       setTorchOn(next);
     } catch {
-      setFlashNotice("플래시를 켜지 못했어요.");
+      setFlashNotice("현재 브라우저에서는 플래시 제어를 지원하지 않습니다.");
+      setTorchUnsupported(true);
       window.setTimeout(() => setFlashNotice(""), 2200);
     }
   };
