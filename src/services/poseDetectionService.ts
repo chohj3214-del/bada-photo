@@ -1,9 +1,11 @@
 import { FilesetResolver, PoseLandmarker } from '@mediapipe/tasks-vision';
 export type Point = { x: number; y: number };
 export type PoseGuide = { points: Point[]; label: string };
+export type PoseTemplate = PoseGuide;
 export type PoseReading = { score: number; offsetX: number; offsetY: number };
 let landmarker: PoseLandmarker | null = null;
 let loading: Promise<PoseLandmarker> | null = null;
+let imageLandmarker: PoseLandmarker | null = null;
 
 export async function preparePoseLandmarker() {
   if (landmarker) return landmarker;
@@ -13,6 +15,23 @@ export async function preparePoseLandmarker() {
     return landmarker;
   })();
   return loading;
+}
+async function prepareImageLandmarker() {
+  if (imageLandmarker) return imageLandmarker;
+  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm');
+  imageLandmarker = await PoseLandmarker.createFromOptions(vision, { baseOptions: { modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task' }, runningMode: 'IMAGE', numPoses: 1 });
+  return imageLandmarker;
+}
+export async function analyseUploadedPose(dataUrl: string): Promise<PoseTemplate | null> {
+  const image = new Image(); image.src = dataUrl; await image.decode();
+  const detector = await prepareImageLandmarker();
+  const landmarks = detector.detect(image).landmarks[0];
+  const indexes = [11,12,13,14,15,16,23,24,25,26,27,28];
+  if (!landmarks || indexes.filter((index) => (landmarks[index].visibility ?? 0) >= .45).length < 8) return null;
+  const shoulder = { x: (landmarks[11].x + landmarks[12].x) / 2, y: (landmarks[11].y + landmarks[12].y) / 2 };
+  const scale = Math.max(Math.hypot(landmarks[11].x - landmarks[12].x, landmarks[11].y - landmarks[12].y), .05);
+  const points = indexes.map((index) => ({ x: ((landmarks[index].x - shoulder.x) / scale) * 18 + 50, y: ((landmarks[index].y - shoulder.y) / scale) * 18 + 40 }));
+  return { label: '업로드한 사진의 포즈', points };
 }
 
 export function readCameraPose(video: HTMLVideoElement, timestamp: number, guide: PoseGuide): PoseReading | null {

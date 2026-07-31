@@ -26,6 +26,7 @@ import { SeaLionMascot } from "./components/SeaLionMascot";
 import { PoseOverlay } from "./components/PoseOverlay";
 import {
   analyseReferencePose,
+  analyseUploadedPose,
   type PoseGuide,
 } from "./services/poseDetectionService";
 import {
@@ -90,7 +91,9 @@ function App() {
     setGuide(
       p === "자유 촬영"
         ? undefined
-        : ((await analyseReferencePose(p)) ?? undefined),
+        : (p.startsWith("uploaded-") && image
+          ? (await analyseUploadedPose(image)) ?? undefined
+          : (await analyseReferencePose(p)) ?? undefined),
     );
     setScreen("camera");
   };
@@ -160,7 +163,7 @@ function App() {
   const publishDraft = async () => {
     if (!draft) return;
     const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
-    await Promise.all(draft.images.map((dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location })));
+    await Promise.all(draft.images.map(async (dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl)) ?? undefined : undefined })));
     setUploaded(await getUploads());
     setDraft(null);
     setScreen("home");
@@ -258,6 +261,7 @@ function Home({
     id: string;
     account: string;
     image: string;
+    customAllowed: boolean;
   } | null>(null);
   type CommentItem = { text: string; author: "me" | "other" };
   const [comments, setComments] = useState<Record<string, CommentItem[]>>(() => {
@@ -298,18 +302,19 @@ function Home({
     setCommentsClosing(true);
     window.setTimeout(() => { setCommentsOpen(false); setCommentsClosing(false); }, 260);
   };
-  const displayCards: [string, string, string, number, string?][] = [
+  const displayCards: [string, string, string, number, string, boolean][] = [
     ...uploaded.map(
       (u) =>
-        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0, u.location] as [
+        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0, u.location || "", u.customPoseAllowed === true] as [
           string,
           string,
           string,
           number,
-          string?,
+          string,
+          boolean,
         ],
     ),
-    ...cards,
+    ...cards.map((card) => [card[0], card[1], card[2], card[3], card[4] || "", true] as [string, string, string, number, string, boolean]),
   ].filter(([, account]) =>
     account.toLowerCase().includes(query.toLowerCase()),
   );
@@ -370,12 +375,12 @@ function Home({
         <button onClick={() => { const next = !showAll; setShowAll(next); setSearching(next); onBrowseModeChange(next); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
-        {displayCards.map(([id, account, img, count, location]) => (
+        {displayCards.map(([id, account, img, count, location, customAllowed]) => (
           <article className="photo-card" key={id + img}>
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) { setDetail({ id, account, image: img }); setCommentsOpen(false); }
+                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed }); setCommentsOpen(false); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -403,12 +408,12 @@ function Home({
                   <Trash2 />
                 </button>
               )}
-              <button
+              {customAllowed && <button
                 onClick={() => onCustom(id, img)}
                 aria-label={`${account} 사진으로 촬영하기`}
               >
                 커스텀
-              </button>
+              </button>}
               </div>
           </article>
         ))}
@@ -426,7 +431,7 @@ function Home({
             <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{(cards.find(([id]) => id === detail.id)?.[3] ?? 0) + (likes[detail.id] ? 1 : 0)}</span></button>
             <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length}</span></button>
             <button onClick={() => window.alert("사진을 저장했어요.")} aria-label="사진 저장"><FolderHeart /><span>저장</span></button>
-            <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image)} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>
+            {detail.customAllowed && <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image)} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>}
           </div>
           {commentsOpen && <div className={`sheet-layer ${commentsClosing ? "is-closing" : ""}`} onClick={closeComments}>
         <section className="comment-sheet" onClick={(event) => event.stopPropagation()}>
