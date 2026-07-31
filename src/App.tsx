@@ -47,7 +47,7 @@ declare global {
 }
 type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
-const APP_VERSION = "2026-07-31.3";
+const APP_VERSION = "2026-07-31.4";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
@@ -428,7 +428,7 @@ function Guide({ onClose }: { onClose: () => void }) {
           홈 아래의 <b>내 갤러리에서 사진 추가</b>를 눌러 내 기기의 사진을 커스텀 사진으로 올릴 수 있어요. 올린 사진에는 내 닉네임이 표시되며, 휴지통으로 개별 삭제할 수 있어요. 내 댓글만 직접 지울 수 있고, 다른 사람 댓글은 신고 시 안전 필터가 확인해요.
         </GuideItem>
         <GuideItem number="9" title="MY와 화면 설정">
-          아래 메뉴의 <b>MY</b>에서 이름과 프로필 사진을 바꿀 수 있어요. 홈 오른쪽 위 달·해 아이콘으로 앱 다크 모드를 켜거나 끌 수 있어요. 휴대폰 시스템 다크 모드와 관계없이 앱 색상은 안정적으로 표시돼요.
+          아래 메뉴의 <b>MY</b>에서 이름과 프로필 사진을 바꿀 수 있어요. 홈 오른쪽 위 달·해 아이콘으로 앱 다크 모드를 켜거나 끌 수 있어요. <b>휴대폰과 브라우저 환경에 따라 화면이 다르게 보일 수 있어 다크 모드 사용은 권장하지 않아요.</b>
         </GuideItem>
         <GuideItem number="10" title="카메라가 열리지 않을 때">
           처음 촬영할 때 카메라 권한을 <b>허용</b>해 주세요. 거부했다면 휴대폰 설정 또는 브라우저 사이트 설정에서 카메라를 허용한 뒤 다시 시도하세요. 카메라가 없는 PC에서는 데모 화면으로도 기능을 살펴볼 수 있어요.
