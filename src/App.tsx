@@ -64,7 +64,7 @@ type PostDraft = {
   customPoseAllowed: boolean;
 };
 const assetBase = import.meta.env.BASE_URL;
-const cards: [string, string, string, number][] = [
+const cards: [string, string, string, number, string?][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
   ["side-standing", "@bluewalk", `${assetBase}custom-photos/side-standing.jpg`, 186],
@@ -158,7 +158,8 @@ function App() {
   };
   const publishDraft = async () => {
     if (!draft) return;
-    await Promise.all(draft.images.map((dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now() })));
+    const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
+    await Promise.all(draft.images.map((dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location })));
     setUploaded(await getUploads());
     setDraft(null);
     setScreen("home");
@@ -304,14 +305,15 @@ function Home({
     setCommentsClosing(true);
     window.setTimeout(() => { setCommentsOpen(false); setCommentsClosing(false); }, 260);
   };
-  const displayCards: [string, string, string, number][] = [
+  const displayCards: [string, string, string, number, string?][] = [
     ...uploaded.map(
       (u) =>
-        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0] as [
+        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0, u.location] as [
           string,
           string,
           string,
           number,
+          string?,
         ],
     ),
     ...cards,
@@ -375,7 +377,7 @@ function Home({
         <button onClick={() => { const next = !showAll; setShowAll(next); setSearching(next); onBrowseModeChange(next); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
-        {displayCards.map(([id, account, img, count]) => (
+        {displayCards.map(([id, account, img, count, location]) => (
           <article className="photo-card" key={id + img}>
             <button
               className="photo-open"
@@ -388,7 +390,7 @@ function Home({
             </button>
             <div className="photo-shade" />
             <div className="card-top">
-              <b>{account}</b>
+              <div className="card-identity"><b>{account}</b>{location && <span className="card-place-name">· {location}</span>}</div>
               <button
                 className={likes[id] ? "liked" : ""}
                 onClick={() => toggleLike(id)}
