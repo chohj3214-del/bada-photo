@@ -40,14 +40,32 @@ import {
 } from "./services/storageService";
 import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
+import {
+  analysePhotoForEdit,
+  defaultEditSettings,
+  getRecommendedCaption,
+  type EditRecommendation,
+  type EditSettings,
+} from "./services/photoAnalysisService";
 declare global {
   interface MediaTrackConstraintSet {
     zoom?: number;
   }
 }
-type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my";
+type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my" | "editor" | "post";
+type PostDraft = {
+  images: string[];
+  activeIndex: number;
+  edits: EditSettings[];
+  caption: string;
+  hashtags: string[];
+  location: string;
+  peopleTags: string[];
+  commentsAllowed: boolean;
+  customPoseAllowed: boolean;
+};
 const assetBase = import.meta.env.BASE_URL;
-const APP_VERSION = "2026-07-31.5";
+const APP_VERSION = "2026-07-31.6";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
@@ -63,6 +81,7 @@ function App() {
   const [uploaded, setUploaded] = useState<UploadedPhoto[]>([]);
   const [browseMode, setBrowseMode] = useState(false);
   const [guideClosing, setGuideClosing] = useState(false);
+  const [draft, setDraft] = useState<PostDraft | null>(null);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
   );
@@ -122,6 +141,28 @@ function App() {
       setGuideClosing(false);
     }, 260);
   };
+  const beginPostDraft = (images: string[]) => {
+    if (!images.length) return;
+    setDraft({
+      images,
+      activeIndex: 0,
+      edits: images.map(() => ({ ...defaultEditSettings })),
+      caption: getRecommendedCaption(0),
+      hashtags: ["#바다사진", "#부산바다"],
+      location: "부산 · 해운대",
+      peopleTags: [],
+      commentsAllowed: true,
+      customPoseAllowed: true,
+    });
+    setScreen("editor");
+  };
+  const publishDraft = async () => {
+    if (!draft) return;
+    await Promise.all(draft.images.map((dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now() })));
+    setUploaded(await getUploads());
+    setDraft(null);
+    setScreen("home");
+  };
   return (
     <main className={`app-shell ${dark ? "dark" : ""}`}>
       {screen === "onboarding" && <Onboarding onStart={() => { localStorage.setItem("bada-onboarding", "done"); setScreen("home"); }} />}
@@ -129,7 +170,7 @@ function App() {
         <Home
           onCustom={openCamera}
           uploaded={uploaded}
-          onUpload={async (dataUrl) => { await saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now() }); setUploaded(await getUploads()); }}
+          onUpload={beginPostDraft}
           onRemoveUpload={async (id) => { await deleteUpload(id); setUploaded(await getUploads()); }}
           dark={dark}
           onToggleDark={toggleDark}
@@ -141,6 +182,8 @@ function App() {
         />
       )}{" "}
       {screen === "guide" && <Guide closing={guideClosing} onClose={closeGuide} />}
+      {screen === "editor" && draft && <PhotoEditor draft={draft} onChange={setDraft} onBack={() => setScreen("home")} onNext={() => setScreen("post")} />}
+      {screen === "post" && draft && <NewPost draft={draft} onChange={setDraft} onBack={() => setScreen("editor")} onPublish={() => void publishDraft()} />}
       {screen === "camera" && (
         <CameraScreen
           place={place}
@@ -196,7 +239,7 @@ function Home({
 }: {
   onCustom: (p: string, image?: string) => void;
   uploaded: UploadedPhoto[];
-  onUpload: (u: string) => void | Promise<void>;
+  onUpload: (images: string[]) => void;
   onRemoveUpload: (id: string) => void | Promise<void>;
   dark: boolean;
   onToggleDark: () => void;
@@ -223,12 +266,13 @@ function Home({
   const [detailClosing, setDetailClosing] = useState(false);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (f) {
-      const r = new FileReader();
-      r.onload = () => onUpload(String(r.result));
-      r.readAsDataURL(f);
-    }
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    Promise.all(files.map((file) => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsDataURL(file);
+    }))).then(onUpload);
   };
   const toggleLike = (id: string) =>
     setLikes((current) => {
@@ -365,7 +409,7 @@ function Home({
       {!displayCards.length && <p className="no-search">검색 결과가 없어요.</p>}
       <label className="upload-card separate-upload-card">
         <ImagePlus /> 내 갤러리에서 사진 추가
-        <input type="file" accept="image/*" onChange={pick} />
+        <input type="file" accept="image/*" multiple onChange={pick} />
       </label>
       {detail && (
         <div className={`sheet-layer ${detailClosing ? "is-closing" : ""}`} onClick={closeDetail}>
@@ -465,6 +509,50 @@ function Guide({ onClose, closing }: { onClose: () => void; closing: boolean }) 
 }
 function GuideItem({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
   return <article className="guide-item"><span>{number}</span><div><h2>{title}</h2><p>{children}</p></div></article>;
+}
+function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; onChange: (draft: PostDraft) => void; onBack: () => void; onNext: () => void }) {
+  const [recommendation, setRecommendation] = useState<EditRecommendation | null>(null);
+  const [compare, setCompare] = useState(50);
+  const activeEdit = draft.edits[draft.activeIndex];
+  useEffect(() => { void analysePhotoForEdit(draft.images[draft.activeIndex]).then(setRecommendation); }, [draft.activeIndex, draft.images]);
+  const updateEdit = (next: Partial<EditSettings>) => onChange({ ...draft, edits: draft.edits.map((edit, index) => index === draft.activeIndex ? { ...edit, ...next } : edit) });
+  const applyAi = () => { if (recommendation) updateEdit({ mode: "ai", brightness: recommendation.brightness, saturation: recommendation.saturation, horizon: recommendation.horizon }); };
+  const reset = () => updateEdit({ ...defaultEditSettings });
+  const filter = `brightness(${100 + activeEdit.brightness}%) saturate(${100 + activeEdit.saturation}%)`;
+  return <section className="page editor-page page-enter">
+    <header><button onClick={onBack} aria-label="사진 선택으로 돌아가기"><ChevronLeft /></button><b>사진 편집</b><button className="header-action" onClick={onNext} aria-label="새 게시물로 다음 단계">다음</button></header>
+    <div className="edit-preview" style={{ transform: `rotate(${activeEdit.horizon}deg)` }}>
+      <img src={draft.images[draft.activeIndex]} alt="원본 사진" />
+      <div className="edit-after" style={{ width: `${compare}%` }}><img src={draft.images[draft.activeIndex]} style={{ filter }} alt="보정 미리보기" /></div>
+      <span className="compare-line" style={{ left: `${compare}%` }}>‹›</span>
+    </div>
+    <input className="compare-range" type="range" min="0" max="100" value={compare} onChange={(event) => setCompare(Number(event.target.value))} aria-label="원본과 보정 비교 비율" />
+    <div className="original-toggle"><button onClick={reset} className={activeEdit.mode === "original" ? "selected" : ""}>원본</button><button onClick={applyAi} className={activeEdit.mode !== "original" ? "selected" : ""}>보정</button></div>
+    {draft.images.length > 1 && <div className="edit-pagination"><button disabled={draft.activeIndex === 0} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex - 1 })}>‹ 이전</button><b>{draft.activeIndex + 1} / {draft.images.length}</b><button disabled={draft.activeIndex === draft.images.length - 1} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex + 1 })}>다음 ›</button></div>}
+    <div className="edit-tools">{([ ["original", "원본"], ["ai", "AI 보정"], ["brightness", "밝기"], ["tone", "색감"], ["horizon", "수평"], ["crop", "자르기"] ] as [EditSettings["mode"], string][]).map(([mode, label]) => <button key={mode} onClick={() => mode === "ai" ? applyAi() : updateEdit({ mode })} className={activeEdit.mode === mode ? "selected" : ""} aria-label={`${label} 편집 선택`}><span>{mode === "ai" ? <Sparkles /> : mode === "brightness" ? "☀" : mode === "tone" ? "◉" : mode === "horizon" ? "⌁" : mode === "crop" ? "⌗" : "▣"}</span>{label}</button>)}</div>
+    {(activeEdit.mode === "brightness" || activeEdit.mode === "tone" || activeEdit.mode === "horizon") && <label className="edit-slider">{activeEdit.mode === "brightness" ? "밝기" : activeEdit.mode === "tone" ? "색감" : "수평"}<input type="range" min={activeEdit.mode === "horizon" ? -3 : -20} max={activeEdit.mode === "horizon" ? 3 : 20} step={activeEdit.mode === "horizon" ? .5 : 1} value={activeEdit.mode === "brightness" ? activeEdit.brightness : activeEdit.mode === "tone" ? activeEdit.saturation : activeEdit.horizon} onChange={(event) => updateEdit(activeEdit.mode === "brightness" ? { brightness: Number(event.target.value) } : activeEdit.mode === "tone" ? { saturation: Number(event.target.value) } : { horizon: Number(event.target.value) })} /></label>}
+    <section className="ai-recommendation"><div><Sparkles /><b>AI 추천 보정</b><button onClick={reset} aria-label="추천 보정 되돌리기">되돌리기</button></div><p>{recommendation?.message || "사진을 살펴보고 있어요."}</p><ul><li>수평 <b>+{recommendation?.horizon ?? 1.5}°</b></li><li>밝기 <b>+{recommendation?.brightness ?? 8}</b></li><li>바다 색감 <b>+{recommendation?.saturation ?? 12}</b></li></ul><button className="apply-recommendation" onClick={applyAi}>추천값 적용</button></section>
+    <button className="primary editor-next" onClick={onNext} aria-label="사진 편집 후 새 게시물 작성"><Camera /> 다음: 게시물 작성</button>
+  </section>;
+}
+function NewPost({ draft, onChange, onBack, onPublish }: { draft: PostDraft; onChange: (draft: PostDraft) => void; onBack: () => void; onPublish: () => void }) {
+  const [tagInput, setTagInput] = useState("");
+  const [personInput, setPersonInput] = useState("");
+  const [captionIndex, setCaptionIndex] = useState(0);
+  const caption = getRecommendedCaption(captionIndex);
+  const addTag = () => { const tag = tagInput.trim().replace(/^#?/, "#"); if (tag !== "#" && !draft.hashtags.includes(tag)) onChange({ ...draft, hashtags: [...draft.hashtags, tag] }); setTagInput(""); };
+  return <section className="page post-page page-enter">
+    <header><button onClick={onBack} aria-label="사진 편집으로 돌아가기"><ChevronLeft /></button><b>새 게시물</b><span /></header>
+    <div className="post-preview">{draft.images.map((image, index) => <img key={image} src={image} alt={`편집한 사진 ${index + 1}`} />)}</div>
+    <textarea className="caption-input" value={draft.caption} onChange={(event) => onChange({ ...draft, caption: event.target.value })} aria-label="게시물 설명" placeholder="사진 설명을 입력하세요" />
+    <section className="caption-recommendation"><SeaLionMascot small /><div><b>AI 문구 추천</b><p>{caption}</p><button onClick={() => setCaptionIndex((value) => value + 1)} aria-label="추천 문구 다시 받기">다시 추천</button><button onClick={() => onChange({ ...draft, caption })} aria-label="추천 문구 적용">적용</button></div></section>
+    <div className="tag-list">{draft.hashtags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, hashtags: draft.hashtags.filter((item) => item !== tag) })} aria-label={`${tag} 태그 삭제`}>{tag} ×</button>)}</div>
+    <div className="inline-add"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="해시태그 추가" aria-label="해시태그 입력" /><button onClick={addTag} aria-label="해시태그 추가">추가</button></div>
+    <div className="post-settings"><label>장소<select value={draft.location} onChange={(event) => onChange({ ...draft, location: event.target.value })} aria-label="장소 선택"><option>부산 · 해운대</option><option>부산 · 광안리</option><option>부산 · 송도</option><option>장소 없음</option></select></label><label>사람 태그<div className="inline-add"><input value={personInput} onChange={(event) => setPersonInput(event.target.value)} placeholder="직접 검색" aria-label="사람 태그 검색" /><button onClick={() => { if (personInput.trim() && !draft.peopleTags.includes(personInput.trim())) onChange({ ...draft, peopleTags: [...draft.peopleTags, personInput.trim()] }); setPersonInput(""); }} aria-label="사람 태그 선택">선택</button></div></label>{draft.peopleTags.length > 0 && <div className="tag-list">{draft.peopleTags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, peopleTags: draft.peopleTags.filter((item) => item !== tag) })}>{tag} ×</button>)}</div>}</div>
+    <div className="switch-row"><span><b>댓글 허용</b><small>다른 이용자가 댓글을 남길 수 있어요.</small></span><button className={draft.commentsAllowed ? "switch on" : "switch"} onClick={() => onChange({ ...draft, commentsAllowed: !draft.commentsAllowed })} aria-label="댓글 허용 전환"><i /></button></div>
+    <div className="switch-row"><span><b>커스텀 포즈 허용</b><small>다른 이용자가 이 포즈를 촬영 가이드로 사용할 수 있어요.</small></span><button className={draft.customPoseAllowed ? "switch on" : "switch"} onClick={() => onChange({ ...draft, customPoseAllowed: !draft.customPoseAllowed })} aria-label="커스텀 포즈 허용 전환"><i /></button></div>
+    <button className="primary publish-button" onClick={onPublish} aria-label="게시물 업로드하기"><ImagePlus /> 업로드하기</button>
+  </section>;
 }
 function Nav({
   goHome,
