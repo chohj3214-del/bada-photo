@@ -1,0 +1,10 @@
+alter table public.posts add column if not exists author_id text;
+alter table public.posts add column if not exists author_avatar text;
+alter table public.posts add column if not exists caption text not null default '';
+alter table public.posts add column if not exists hashtags text[] not null default '{}';
+alter table public.posts add column if not exists is_public boolean not null default true;
+alter table public.posts add column if not exists comments_allowed boolean not null default true;
+alter table public.posts add column if not exists likes_count integer not null default 0;
+alter table public.posts add column if not exists comments_count integer not null default 0;
+alter table public.posts add column if not exists pose_template jsonb;
+create index if not exists posts_public_created_at on public.posts (is_public, created_at desc);

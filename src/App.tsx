@@ -102,9 +102,13 @@ function App() {
     getPhotos()
       .then(setSaved)
       .catch(() => setSaved([]));
+  const refreshUploads = async () => {
+    const [local, remote] = await Promise.all([getUploads(), getPublicPosts().catch(() => [])]);
+    setUploaded([...local, ...remote]);
+  };
   useEffect(() => {
     void refresh();
-    void Promise.all([getUploads(), getPublicPosts().catch(() => [])]).then(([local, remote]) => setUploaded([...local, ...remote])).catch(() => setUploaded([]));
+    void refreshUploads().catch(() => setUploaded([]));
   }, []);
   const capture = async (data: string) => {
     const filename = `bada-photo-${Date.now()}.jpg`;
@@ -180,7 +184,7 @@ function App() {
           onCustom={openCamera}
           uploaded={uploaded}
           onUpload={beginPostDraft}
-          onRemoveUpload={async (id) => { await deleteUpload(id); setUploaded(await getUploads()); }}
+          onRemoveUpload={async (id) => { await deleteUpload(id); await refreshUploads(); }}
           dark={dark}
           onToggleDark={toggleDark}
           onBrowseModeChange={setBrowseMode}
