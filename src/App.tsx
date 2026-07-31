@@ -268,19 +268,7 @@ function Home({
           </button>
         </div>
       )}
-      {!showAll && <section className="hero">
-        <div>
-          <h1>
-            오늘은 어떤 바다를
-            <br />
-            담아볼까요?
-          </h1>
-          <span>
-            <Sparkles /> AI 촬영 가이드
-          </span>
-        </div>
-        <SeaLionMascot />
-      </section>}
+      {!showAll && <section className="mascot-intro"><SeaLionMascot /><div className="mascot-speech"><b>안녕하세요! 바다사자 바다랑이에요.</b><p>마음에 드는 사진의 포즈를 골라<br/>더 멋진 바다사진을 촬영해 보세요!</p></div></section>}
       <div className="section-title">
         <h2>
           <Flame /> 커스텀 사진
