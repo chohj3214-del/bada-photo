@@ -208,7 +208,7 @@ function Home({
     localStorage.setItem("bada-comments", JSON.stringify(next));
   };
   const displayCards: [string, string, string, number][] = [
-    ...(showAll ? uploaded.map(
+    ...uploaded.map(
       (u, i) =>
         [`uploaded-${i}`, `@${nickname}`, u, 0] as [
           string,
@@ -216,7 +216,7 @@ function Home({
           string,
           number,
         ],
-    ) : []),
+    ),
     ...cards,
   ].filter(([, account]) =>
     account.toLowerCase().includes(query.toLowerCase()),
@@ -243,7 +243,7 @@ function Home({
           </button>
         </div>
       </header>
-      {searching && (
+      {(searching || showAll) && (
         <div className="search-bar">
           <Search />
           <input
@@ -283,7 +283,7 @@ function Home({
         </h2>
         <button onClick={() => { setShowAll((value) => !value); setSearching((value) => !showAll ? true : value); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
-      <div className={`photo-grid ${showAll ? "photo-grid-expanded" : ""}`}>
+      <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
         {displayCards.map(([id, account, img, count]) => (
           <article className="photo-card" key={id + img}>
             <button
@@ -305,8 +305,8 @@ function Home({
                 <span>{count + (likes[id] ? 1 : 0)}</span>
               </button>
             </div>
-            <div className="card-bottom">
-              {id.startsWith("uploaded-") && (
+              {!showAll && <div className="card-bottom">
+                {id.startsWith("uploaded-") && (
                 <button
                   className="remove-upload"
                   onClick={() => onRemoveUpload(img)}
@@ -321,7 +321,7 @@ function Home({
               >
                 커스텀
               </button>
-            </div>
+              </div>}
           </article>
         ))}
       </div>
