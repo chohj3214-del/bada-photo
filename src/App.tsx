@@ -281,9 +281,9 @@ function Home({
         <h2>
           <Flame /> 커스텀 사진
         </h2>
-        <button onClick={() => setShowAll((value) => !value)} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
+        <button onClick={() => { setShowAll((value) => !value); setSearching((value) => !showAll ? true : value); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
-      <div className="photo-grid">
+      <div className={`photo-grid ${showAll ? "photo-grid-expanded" : ""}`}>
         {displayCards.map(([id, account, img, count]) => (
           <article className="photo-card" key={id + img}>
             <button
@@ -326,7 +326,7 @@ function Home({
         ))}
       </div>
       {!displayCards.length && <p className="no-search">검색 결과가 없어요.</p>}
-      <label className="upload-card">
+      <label className="upload-card separate-upload-card">
         <ImagePlus /> 내 갤러리에서 사진 추가
         <input type="file" accept="image/*" onChange={pick} />
       </label>
