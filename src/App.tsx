@@ -47,7 +47,7 @@ declare global {
 }
 type Screen = "onboarding" | "home" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
-const APP_VERSION = "2026-07-31.1";
+const APP_VERSION = "2026-07-31.2";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
