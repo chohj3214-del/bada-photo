@@ -103,12 +103,23 @@ function App() {
     void getUploads().then(setUploaded).catch(() => setUploaded([]));
   }, []);
   const capture = async (data: string) => {
-    const link = document.createElement("a");
-    link.href = data;
-    link.download = `bada-photo-${Date.now()}.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
+    const filename = `bada-photo-${Date.now()}.jpg`;
+    const blob = await (await fetch(data)).blob();
+    const file = new File([blob], filename, { type: "image/jpeg" });
+    try {
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: "바다사진" });
+      } else {
+        const link = document.createElement("a");
+        link.href = data;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+    } catch (error) {
+      if ((error as DOMException).name !== "AbortError") throw error;
+    }
     await savePhoto({
       id: crypto.randomUUID(),
       dataUrl: data,
