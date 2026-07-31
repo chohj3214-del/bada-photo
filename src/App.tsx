@@ -82,6 +82,7 @@ function App() {
   const [browseMode, setBrowseMode] = useState(false);
   const [guideClosing, setGuideClosing] = useState(false);
   const [draft, setDraft] = useState<PostDraft | null>(null);
+  const publishLock = useRef(false);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
   );
@@ -170,7 +171,8 @@ function App() {
     setScreen("editor");
   };
   const publishDraft = async () => {
-    if (!draft) return;
+    if (!draft || publishLock.current) return;
+    publishLock.current = true;
     try {
       const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
       const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
@@ -181,6 +183,8 @@ function App() {
       setScreen("home");
     } catch {
       window.alert("게시물 업로드에 실패했어요. 인터넷 연결과 Supabase 설정을 확인한 뒤 다시 시도해 주세요.");
+    } finally {
+      publishLock.current = false;
     }
   };
   return (
