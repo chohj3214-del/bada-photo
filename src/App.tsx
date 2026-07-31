@@ -60,7 +60,6 @@ type PostDraft = {
   caption: string;
   hashtags: string[];
   location: string;
-  peopleTags: string[];
   commentsAllowed: boolean;
   customPoseAllowed: boolean;
 };
@@ -152,7 +151,6 @@ function App() {
       caption: getRecommendedCaption(0),
       hashtags: ["#바다사진", "#부산바다"],
       location: "부산 · 해운대",
-      peopleTags: [],
       commentsAllowed: true,
       customPoseAllowed: true,
     });
@@ -561,7 +559,6 @@ function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; on
 }
 function NewPost({ draft, onChange, onBack, onPublish }: { draft: PostDraft; onChange: (draft: PostDraft) => void; onBack: () => void; onPublish: () => void }) {
   const [tagInput, setTagInput] = useState("");
-  const [personInput, setPersonInput] = useState("");
   const [captionIndex, setCaptionIndex] = useState(0);
   const caption = getRecommendedCaption(captionIndex);
   const addTag = () => { const tag = tagInput.trim().replace(/^#?/, "#"); if (tag !== "#" && !draft.hashtags.includes(tag)) onChange({ ...draft, hashtags: [...draft.hashtags, tag] }); setTagInput(""); };
@@ -572,7 +569,7 @@ function NewPost({ draft, onChange, onBack, onPublish }: { draft: PostDraft; onC
     <section className="caption-recommendation"><SeaLionMascot small /><div><b>AI 문구 추천</b><p>{caption}</p><button onClick={() => setCaptionIndex((value) => value + 1)} aria-label="추천 문구 다시 받기">다시 추천</button><button onClick={() => onChange({ ...draft, caption })} aria-label="추천 문구 적용">적용</button></div></section>
     <div className="tag-list">{draft.hashtags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, hashtags: draft.hashtags.filter((item) => item !== tag) })} aria-label={`${tag} 태그 삭제`}>{tag} ×</button>)}</div>
     <div className="inline-add"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="해시태그 추가" aria-label="해시태그 입력" /><button onClick={addTag} aria-label="해시태그 추가">추가</button></div>
-    <div className="post-settings"><label>장소<select value={draft.location} onChange={(event) => onChange({ ...draft, location: event.target.value })} aria-label="장소 선택"><option>부산 · 해운대</option><option>부산 · 광안리</option><option>부산 · 송도</option><option>장소 없음</option></select></label><label>사람 태그<div className="inline-add"><input value={personInput} onChange={(event) => setPersonInput(event.target.value)} placeholder="직접 검색" aria-label="사람 태그 검색" /><button onClick={() => { if (personInput.trim() && !draft.peopleTags.includes(personInput.trim())) onChange({ ...draft, peopleTags: [...draft.peopleTags, personInput.trim()] }); setPersonInput(""); }} aria-label="사람 태그 선택">선택</button></div></label>{draft.peopleTags.length > 0 && <div className="tag-list">{draft.peopleTags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, peopleTags: draft.peopleTags.filter((item) => item !== tag) })}>{tag} ×</button>)}</div>}</div>
+    <div className="post-settings"><label>장소<select value={draft.location} onChange={(event) => onChange({ ...draft, location: event.target.value })} aria-label="장소 선택"><option>부산 · 해운대</option><option>부산 · 광안리</option><option>부산 · 송도</option><option>장소 없음</option></select></label></div>
     <div className="switch-row"><span><b>댓글 허용</b><small>다른 이용자가 댓글을 남길 수 있어요.</small></span><button className={draft.commentsAllowed ? "switch on" : "switch"} onClick={() => onChange({ ...draft, commentsAllowed: !draft.commentsAllowed })} aria-label="댓글 허용 전환"><i /></button></div>
     <div className="switch-row"><span><b>커스텀 포즈 허용</b><small>다른 이용자가 이 포즈를 촬영 가이드로 사용할 수 있어요.</small></span><button className={draft.customPoseAllowed ? "switch on" : "switch"} onClick={() => onChange({ ...draft, customPoseAllowed: !draft.customPoseAllowed })} aria-label="커스텀 포즈 허용 전환"><i /></button></div>
     <button className="primary publish-button" onClick={onPublish} aria-label="게시물 업로드하기"><ImagePlus /> 업로드하기</button>
