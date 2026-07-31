@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import { preparePoseLandmarker, readCameraPose, type Point, type PoseGuide } from "../services/poseDetectionService";
+import { preparePoseLandmarker, readCameraPose, type CompositionTemplate, type Point, type PoseGuide } from "../services/poseDetectionService";
 import { getCameraGuide } from "../services/cameraGuideService";
 
 function toScreen(point: Point) { return { x: 50 + point.x * 13, y: 52 + point.y * 13 }; }
 const line = (a?: Point, b?: Point) => a && b ? `${toScreen(a).x},${toScreen(a).y} ${toScreen(b).x},${toScreen(b).y}` : "";
 
-export function PoseOverlay({ guide, active }: { guide?: PoseGuide; active: boolean }) {
+export function PoseOverlay({ guide, composition, active }: { guide?: PoseGuide; composition?: CompositionTemplate; active: boolean }) {
   const [current, setCurrent] = useState<PoseGuide["joints"]>();
   useEffect(() => {
     if (!active || !guide) return;
@@ -37,7 +37,9 @@ export function PoseOverlay({ guide, active }: { guide?: PoseGuide; active: bool
     })}
     {Object.entries(joints).map(([name, point]) => point && <circle key={name} cx={toScreen(point).x} cy={toScreen(point).y} r="1.5" />)}
   </g>;
-  return <svg className="pose-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="참고 포즈와 현재 인물 관절 안내">
+  const box = composition?.bounds;
+  const style = box ? { left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%`, inset: "auto" } : undefined;
+  return <svg className="pose-overlay" style={style} viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="참고 포즈와 현재 인물 관절 안내">
     {draw(guide.joints, "reference-skeleton")}
     {current && draw(current, "current-skeleton")}
   </svg>;
