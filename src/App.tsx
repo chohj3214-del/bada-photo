@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Bell,
   Camera,
@@ -40,7 +40,15 @@ import {
 } from "./services/storageService";
 import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
-import { getPublicComments, getPublicPosts, publishPublicComment, publishPublicPost, togglePublicLike } from "./services/supabaseService";
+import {
+  deletePublicComment,
+  getPublicComments,
+  getPublicPosts,
+  publishPublicComment,
+  publishPublicPost,
+  subscribeToSocialChanges,
+  togglePublicLike,
+} from "./services/supabaseService";
 import {
   analysePhotoForEdit,
   defaultEditSettings,
@@ -64,6 +72,7 @@ type PostDraft = {
   location: string;
   commentsAllowed: boolean;
   customPoseAllowed: boolean;
+  clientRequestId: string;
 };
 const assetBase = import.meta.env.BASE_URL;
 const cards: [string, string, string, number, string?][] = [
@@ -107,14 +116,14 @@ function App() {
     getPhotos()
       .then(setSaved)
       .catch(() => setSaved([]));
-  const refreshUploads = async () => {
+  const refreshUploads = useCallback(async () => {
     const [local, remote] = await Promise.all([getUploads(), getPublicPosts().catch(() => [])]);
     setUploaded([...local, ...remote]);
-  };
+  }, []);
   useEffect(() => {
     void refresh();
     void refreshUploads().catch(() => setUploaded([]));
-  }, []);
+  }, [refreshUploads]);
   const capture = async (data: string) => {
     const filename = `bada-photo-${Date.now()}.jpg`;
     const blob = await (await fetch(data)).blob();
@@ -167,6 +176,7 @@ function App() {
       location: "부산 · 해운대",
       commentsAllowed: true,
       customPoseAllowed: true,
+      clientRequestId: crypto.randomUUID(),
     });
     setScreen("editor");
   };
@@ -177,7 +187,17 @@ function App() {
       const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
       const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
       const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl).catch(() => null)) ?? undefined : undefined })));
-      await Promise.all(photos.map((photo) => publishPublicPost(photo, authorName)));
+      await publishPublicPost({
+        photos,
+        authorName,
+        caption: draft.caption,
+        hashtags: draft.hashtags,
+        location,
+        commentsAllowed: draft.commentsAllowed,
+        customPoseAllowed: draft.customPoseAllowed,
+        isPublic: true,
+        clientRequestId: draft.clientRequestId,
+      });
       await refreshUploads();
       setDraft(null);
       setScreen("home");
@@ -203,6 +223,7 @@ function App() {
             setGuideClosing(false);
             setScreen("guide");
           }}
+          onRefreshSocial={refreshUploads}
         />
       )}{" "}
       {screen === "guide" && <Guide closing={guideClosing} onClose={closeGuide} />}
@@ -260,6 +281,7 @@ function Home({
   onToggleDark,
   onBrowseModeChange,
   onGuide,
+  onRefreshSocial,
 }: {
   onCustom: (p: string, image?: string) => void;
   uploaded: UploadedPhoto[];
@@ -269,6 +291,7 @@ function Home({
   onToggleDark: () => void;
   onBrowseModeChange: (active: boolean) => void;
   onGuide: () => void;
+  onRefreshSocial: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -281,8 +304,11 @@ function Home({
     account: string;
     image: string;
     customAllowed: boolean;
+    likeCount: number;
+    commentCount: number;
+    commentsAllowed: boolean;
   } | null>(null);
-  type CommentItem = { text: string; author: "me" | "other" };
+  type CommentItem = { id?: string; text: string; author: "me" | "other" };
   const [comments, setComments] = useState<Record<string, CommentItem[]>>(() => {
     const saved = JSON.parse(localStorage.getItem("bada-comments") || "{}");
     return Object.fromEntries(Object.entries(saved).map(([id, items]) => [id, (items as (string | CommentItem)[]).map((item) => typeof item === "string" ? { text: item, author: "other" as const } : item)]));
@@ -292,6 +318,11 @@ function Home({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsClosing, setCommentsClosing] = useState(false);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
+  useEffect(() => {
+    let unsubscribe: (() => void) | undefined;
+    void subscribeToSocialChanges(onRefreshSocial).then((cleanup) => { unsubscribe = cleanup; }).catch(() => undefined);
+    return () => unsubscribe?.();
+  }, [onRefreshSocial]);
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -301,11 +332,21 @@ function Home({
       reader.readAsDataURL(file);
     }))).then(onUpload);
   };
+  useEffect(() => {
+    setLikes((current) => {
+      const next = { ...current };
+      uploaded.forEach((photo) => {
+        if (photo.id.startsWith("remote-")) next[`uploaded-${photo.id}`] = photo.likedByMe === true;
+      });
+      return next;
+    });
+  }, [uploaded]);
   const toggleLike = (id: string) =>
     setLikes((current) => {
       const next = { ...current, [id]: !current[id] };
       localStorage.setItem("bada-likes", JSON.stringify(next));
-      if (id.startsWith("uploaded-remote-")) void togglePublicLike(id.replace("uploaded-remote-", "")).catch(() => undefined);
+      if (id.startsWith("uploaded-remote-")) void togglePublicLike(id)
+        .catch(() => setLikes(current));
       return next;
     });
   const saveComments = (next: Record<string, CommentItem[]>) => {
@@ -322,19 +363,29 @@ function Home({
     setCommentsClosing(true);
     window.setTimeout(() => { setCommentsOpen(false); setCommentsClosing(false); }, 260);
   };
-  const displayCards: [string, string, string, number, string, boolean][] = [
+  const loadRemoteComments = async (id: string) => {
+    if (!id.startsWith("uploaded-remote-")) return;
+    const rows = await getPublicComments(id);
+    setComments((current) => ({
+      ...current,
+      [id]: rows.map((row) => ({ id: row.id, text: row.content, author: row.isOwn ? "me" : "other" })),
+    }));
+  };
+  const displayCards: [string, string, string, number, string, boolean, number, boolean][] = [
     ...uploaded.map(
       (u) =>
-        [`uploaded-${u.id}`, `@${u.authorName || nickname}`, u.dataUrl, 0, u.location || "", u.customPoseAllowed === true] as [
+        [`uploaded-${u.id}`, `@${u.authorName || nickname}`, u.dataUrl, u.likesCount || 0, u.location || "", u.customPoseAllowed === true, u.commentsCount || 0, u.commentsAllowed !== false] as [
           string,
           string,
           string,
           number,
           string,
           boolean,
+          number,
+          boolean,
         ],
     ),
-    ...cards.map((card) => [card[0], card[1], card[2], card[3], card[4] || "", true] as [string, string, string, number, string, boolean]),
+    ...cards.map((card) => [card[0], card[1], card[2], card[3], card[4] || "", true, 0, true] as [string, string, string, number, string, boolean, number, boolean]),
   ].filter(([, account]) =>
     account.toLowerCase().includes(query.toLowerCase()),
   );
@@ -395,12 +446,12 @@ function Home({
         <button onClick={() => { const next = !showAll; setShowAll(next); setSearching(next); onBrowseModeChange(next); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
-        {displayCards.map(([id, account, img, count, location, customAllowed]) => (
+        {displayCards.map(([id, account, img, count, location, customAllowed, commentCount, commentsAllowed]) => (
           <article className="photo-card" key={id + img}>
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed }); setCommentsOpen(false); }
+                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed }); setCommentsOpen(false); void loadRemoteComments(id); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -448,8 +499,8 @@ function Home({
           <header className="detail-header"><div><SeaLionMascot small /><b>{detail.account}</b></div><button onClick={closeViewer} aria-label="사진 상세 닫기"><X /></button></header>
           <div className="detail-image-wrap"><img src={detail.image} alt={`${detail.account}의 커스텀 사진`} /></div>
           <div className="detail-actions">
-            <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{(cards.find(([id]) => id === detail.id)?.[3] ?? 0) + (likes[detail.id] ? 1 : 0)}</span></button>
-            <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length}</span></button>
+            <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{detail.id.startsWith("uploaded-remote-") ? detail.likeCount : detail.likeCount + (likes[detail.id] ? 1 : 0)}</span></button>
+            <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); void loadRemoteComments(detail.id); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length || detail.commentCount}</span></button>
             <button onClick={() => window.alert("사진을 저장했어요.")} aria-label="사진 저장"><FolderHeart /><span>저장</span></button>
             {detail.customAllowed && <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image)} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>}
           </div>
@@ -468,17 +519,22 @@ function Home({
             {(comments[detail.id] || []).map((item, index) => (
               <p key={`${item.text}-${index}`}>
                 <span>{item.text}</span>
-                {item.author === "me" ? <button onClick={() => saveComments({ ...comments, [detail.id]: (comments[detail.id] || []).filter((_, i) => i !== index) })} aria-label="내 댓글 삭제"><Trash2 /></button> : <button onClick={() => { if (isInappropriateComment(item.text)) saveComments({ ...comments, [detail.id]: (comments[detail.id] || []).filter((_, i) => i !== index) }); else window.alert("AI 안전 필터가 부적절한 표현을 찾지 못했어요."); }} aria-label="댓글 신고"><ShieldAlert /></button>}
+                {item.author === "me" ? <button onClick={() => { if (item.id) void deletePublicComment(item.id).then(() => void loadRemoteComments(detail.id)); else saveComments({ ...comments, [detail.id]: (comments[detail.id] || []).filter((_, i) => i !== index) }); }} aria-label="내 댓글 삭제"><Trash2 /></button> : <button onClick={() => { if (isInappropriateComment(item.text)) window.alert("신고가 접수되었어요."); else window.alert("AI 안전 필터가 부적절한 표현을 찾지 못했어요."); }} aria-label="댓글 신고"><ShieldAlert /></button>}
               </p>
             ))}
           </div>
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (comment.trim()) {
-                saveComments({
+              if (comment.trim() && detail.commentsAllowed) {
+                const content = comment.trim();
+                if (detail.id.startsWith("uploaded-remote-")) {
+                  void publishPublicComment(detail.id, content, nickname)
+                    .then(() => void loadRemoteComments(detail.id))
+                    .catch(() => window.alert("댓글을 등록하지 못했어요. 다시 시도해 주세요."));
+                } else saveComments({
                   ...comments,
-                  [detail.id]: [...(comments[detail.id] || []), { text: comment.trim(), author: "me" }],
+                  [detail.id]: [...(comments[detail.id] || []), { text: content, author: "me" }],
                 });
                 setComment("");
               }
@@ -487,10 +543,11 @@ function Home({
             <input
               value={comment}
               onChange={(e) => setComment(e.target.value)}
-              placeholder="댓글을 입력하세요"
+              placeholder={detail.commentsAllowed ? "댓글을 입력하세요" : "댓글이 허용되지 않은 게시물이에요"}
               aria-label="댓글 입력"
+              disabled={!detail.commentsAllowed}
             />
-            <button aria-label="댓글 등록">
+            <button aria-label="댓글 등록" disabled={!detail.commentsAllowed}>
               <MessageCircle />
             </button>
           </form>
