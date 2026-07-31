@@ -41,7 +41,7 @@ declare global {
     zoom?: number;
   }
 }
-type Screen = "home" | "camera" | "saved" | "my";
+type Screen = "onboarding" | "home" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
@@ -50,7 +50,7 @@ const cards: [string, string, string, number][] = [
   ["wing-pose", "@summerframe", `${assetBase}custom-photos/wing-pose.jpg`, 219],
 ];
 function App() {
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>(() => localStorage.getItem("bada-onboarding") === "done" ? "home" : "onboarding");
   const [guide, setGuide] = useState<PoseGuide>();
   const [place, setPlace] = useState("자유 촬영");
   const [referenceImage, setReferenceImage] = useState("");
@@ -100,6 +100,7 @@ function App() {
     });
   return (
     <main className={`app-shell ${dark ? "dark" : ""}`}>
+      {screen === "onboarding" && <Onboarding onStart={() => { localStorage.setItem("bada-onboarding", "done"); setScreen("home"); }} />}
       {screen === "home" && (
         <Home
           onCustom={openCamera}
@@ -151,6 +152,10 @@ function App() {
     </main>
   );
 }
+function Onboarding({ onStart }: { onStart: () => void }) {
+  return <section className="onboarding"><SeaLionMascot /><h1>바다를 더 멋지게 담아보세요</h1><p>마음에 드는 바다 사진의 포즈를 골라<br/>AI 가이드와 함께 나만의 사진을 촬영할 수 있어요.</p><button className="primary" onClick={onStart}>준비되셨나요?</button></section>;
+}
+
 function Home({
   onCustom,
   uploaded,
@@ -167,6 +172,7 @@ function Home({
   onToggleDark: () => void;
 }) {
   const [query, setQuery] = useState("");
+  const [showAll, setShowAll] = useState(false);
   const [searching, setSearching] = useState(false);
   const [likes, setLikes] = useState<Record<string, boolean>>(() =>
     JSON.parse(localStorage.getItem("bada-likes") || "{}"),
@@ -202,7 +208,7 @@ function Home({
     localStorage.setItem("bada-comments", JSON.stringify(next));
   };
   const displayCards: [string, string, string, number][] = [
-    ...uploaded.map(
+    ...(showAll ? uploaded.map(
       (u, i) =>
         [`uploaded-${i}`, `@${nickname}`, u, 0] as [
           string,
@@ -210,7 +216,7 @@ function Home({
           string,
           number,
         ],
-    ),
+    ) : []),
     ...cards,
   ].filter(([, account]) =>
     account.toLowerCase().includes(query.toLowerCase()),
@@ -275,7 +281,7 @@ function Home({
         <h2>
           <Flame /> 커스텀 사진
         </h2>
-        <button aria-label="커스텀 사진 전체보기">전체보기 ›</button>
+        <button onClick={() => setShowAll((value) => !value)} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className="photo-grid">
         {displayCards.map(([id, account, img, count]) => (
