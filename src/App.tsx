@@ -172,7 +172,7 @@ function App() {
       activeIndex: 0,
       edits: images.map(() => ({ ...defaultEditSettings })),
       caption: getRecommendedCaption(0),
-      hashtags: ["#바다사진", "#부산바다"],
+      hashtags: ["바다사진", "부산바다"],
       location: "부산 · 해운대",
       commentsAllowed: true,
       customPoseAllowed: true,
@@ -307,6 +307,8 @@ function Home({
     likeCount: number;
     commentCount: number;
     commentsAllowed: boolean;
+    caption?: string;
+    hashtags: string[];
   } | null>(null);
   type CommentItem = { id?: string; text: string; author: "me" | "other" };
   const [comments, setComments] = useState<Record<string, CommentItem[]>>(() => {
@@ -317,6 +319,7 @@ function Home({
   const [detailClosing, setDetailClosing] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentsClosing, setCommentsClosing] = useState(false);
+  const [captionExpanded, setCaptionExpanded] = useState(false);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
   useEffect(() => {
     let unsubscribe: (() => void) | undefined;
@@ -371,10 +374,10 @@ function Home({
       [id]: rows.map((row) => ({ id: row.id, text: row.content, author: row.isOwn ? "me" : "other" })),
     }));
   };
-  const displayCards: [string, string, string, number, string, boolean, number, boolean][] = [
+  const displayCards: [string, string, string, number, string, boolean, number, boolean, string | undefined, string[]][] = [
     ...uploaded.map(
       (u) =>
-        [`uploaded-${u.id}`, `@${u.authorName || nickname}`, u.dataUrl, u.likesCount || 0, u.location || "", u.customPoseAllowed === true, u.commentsCount || 0, u.commentsAllowed !== false] as [
+        [`uploaded-${u.id}`, `@${u.authorName || nickname}`, u.dataUrl, u.likesCount || 0, u.location || "", u.customPoseAllowed === true, u.commentsCount || 0, u.commentsAllowed !== false, u.caption, (u.hashtags || []).map((tag) => tag.replace(/^#+/, "")).filter(Boolean)] as [
           string,
           string,
           string,
@@ -383,9 +386,11 @@ function Home({
           boolean,
           number,
           boolean,
+          string | undefined,
+          string[],
         ],
     ),
-    ...cards.map((card) => [card[0], card[1], card[2], card[3], card[4] || "", true, 0, true] as [string, string, string, number, string, boolean, number, boolean]),
+    ...cards.map((card) => [card[0], card[1], card[2], card[3], card[4] || "", true, 0, true, undefined, []] as [string, string, string, number, string, boolean, number, boolean, string | undefined, string[]]),
   ].filter(([, account]) =>
     account.toLowerCase().includes(query.toLowerCase()),
   );
@@ -446,12 +451,12 @@ function Home({
         <button onClick={() => { const next = !showAll; setShowAll(next); setSearching(next); onBrowseModeChange(next); }} aria-label="커스텀 사진 전체보기">{showAll ? "접기" : "전체보기 ›"}</button>
       </div>
       <div className={`photo-grid photo-grid-scroll ${showAll ? "photo-grid-expanded" : ""}`}>
-        {displayCards.map(([id, account, img, count, location, customAllowed, commentCount, commentsAllowed]) => (
+        {displayCards.map(([id, account, img, count, location, customAllowed, commentCount, commentsAllowed, caption, hashtags]) => (
           <article className="photo-card" key={id + img}>
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed }); setCommentsOpen(false); void loadRemoteComments(id); }
+                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed, caption, hashtags }); setCaptionExpanded(false); setCommentsOpen(false); void loadRemoteComments(id); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -498,6 +503,10 @@ function Home({
         <section className={`photo-detail-viewer ${detailClosing ? "is-closing" : ""}`}>
           <header className="detail-header"><div><SeaLionMascot small /><b>{detail.account}</b></div><button onClick={closeViewer} aria-label="사진 상세 닫기"><X /></button></header>
           <div className="detail-image-wrap"><img src={detail.image} alt={`${detail.account}의 커스텀 사진`} /></div>
+          {(detail.caption || detail.hashtags.length > 0) && <section className="detail-post-copy">
+            {detail.caption && <div className={captionExpanded ? "detail-caption expanded" : "detail-caption"}><b>{detail.account}</b><p>{detail.caption}</p>{detail.caption.length > 90 && <button onClick={() => setCaptionExpanded((value) => !value)} aria-label="게시물 문구 더보기">{captionExpanded ? "접기" : "더보기"}</button>}</div>}
+            {detail.hashtags.length > 0 && <div className="detail-tags">{detail.hashtags.map((tag) => <span key={tag}>#{tag}</span>)}</div>}
+          </section>}
           <div className="detail-actions">
             <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{detail.id.startsWith("uploaded-remote-") ? detail.likeCount : detail.likeCount + (likes[detail.id] ? 1 : 0)}</span></button>
             <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); void loadRemoteComments(detail.id); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length || detail.commentCount}</span></button>
@@ -644,13 +653,13 @@ function NewPost({ draft, onChange, onBack, onPublish }: { draft: PostDraft; onC
   const [tagInput, setTagInput] = useState("");
   const [captionIndex, setCaptionIndex] = useState(0);
   const caption = getRecommendedCaption(captionIndex);
-  const addTag = () => { const tag = tagInput.trim().replace(/^#?/, "#"); if (tag !== "#" && !draft.hashtags.includes(tag)) onChange({ ...draft, hashtags: [...draft.hashtags, tag] }); setTagInput(""); };
+  const addTag = () => { const tag = tagInput.trim().replace(/^#+/, "").replace(/\s+/g, ""); if (tag && !draft.hashtags.includes(tag)) onChange({ ...draft, hashtags: [...draft.hashtags, tag] }); setTagInput(""); };
   return <section className="page post-page page-enter">
     <header><button onClick={onBack} aria-label="사진 편집으로 돌아가기"><ChevronLeft /></button><b>새 게시물</b><span /></header>
     <div className="post-preview">{draft.images.map((image, index) => <img key={image} src={image} alt={`편집한 사진 ${index + 1}`} />)}</div>
     <textarea className="caption-input" value={draft.caption} onChange={(event) => onChange({ ...draft, caption: event.target.value })} aria-label="게시물 설명" placeholder="사진 설명을 입력하세요" />
     <section className="caption-recommendation"><SeaLionMascot small /><div><b>AI 문구 추천</b><p>{caption}</p><button onClick={() => setCaptionIndex((value) => value + 1)} aria-label="추천 문구 다시 받기">다시 추천</button><button onClick={() => onChange({ ...draft, caption })} aria-label="추천 문구 적용">적용</button></div></section>
-    <div className="tag-list">{draft.hashtags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, hashtags: draft.hashtags.filter((item) => item !== tag) })} aria-label={`${tag} 태그 삭제`}>{tag} ×</button>)}</div>
+    <div className="tag-list">{draft.hashtags.map((tag) => <button key={tag} onClick={() => onChange({ ...draft, hashtags: draft.hashtags.filter((item) => item !== tag) })} aria-label={`${tag} 태그 삭제`}>#{tag} ×</button>)}</div>
     <div className="inline-add"><input value={tagInput} onChange={(event) => setTagInput(event.target.value)} placeholder="해시태그 추가" aria-label="해시태그 입력" /><button onClick={addTag} aria-label="해시태그 추가">추가</button></div>
     <div className="post-settings"><label>장소<select value={draft.location} onChange={(event) => onChange({ ...draft, location: event.target.value })} aria-label="장소 선택"><option>부산 · 해운대</option><option>부산 · 광안리</option><option>부산 · 송도</option><option>장소 없음</option></select></label></div>
     <div className="switch-row"><span><b>댓글 허용</b><small>다른 이용자가 댓글을 남길 수 있어요.</small></span><button className={draft.commentsAllowed ? "switch on" : "switch"} onClick={() => onChange({ ...draft, commentsAllowed: !draft.commentsAllowed })} aria-label="댓글 허용 전환"><i /></button></div>

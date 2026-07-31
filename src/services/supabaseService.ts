@@ -28,6 +28,12 @@ export type PublicComment = {
   isOwn?: boolean;
 };
 
+function normalizeHashtags(tags: string[] | null | undefined) {
+  return [...new Set((tags || [])
+    .map((tag) => tag.trim().replace(/^#+/, "").replace(/\s+/g, ""))
+    .filter(Boolean))];
+}
+
 async function requireUser() {
   await ensureAnonymousSession();
   const { data: { user }, error } = await supabase.auth.getUser();
@@ -75,8 +81,8 @@ export async function getPublicPosts(): Promise<UploadedPhoto[]> {
     authorName: row.author_name,
     authorId: row.author_id || undefined,
     authorAvatar: row.author_avatar || undefined,
-    caption: row.caption,
-    hashtags: row.hashtags,
+    caption: row.caption || undefined,
+    hashtags: normalizeHashtags(row.hashtags),
     likesCount: likeCounts.get(row.id) || 0,
     commentsCount: commentCounts.get(row.id) || 0,
     commentsAllowed: row.comments_allowed,
@@ -119,7 +125,9 @@ export async function publishPublicPost(input: PublishPostInput) {
     const first = input.photos[0];
     const { data: post, error: postError } = await supabase.from("posts").insert({
       image_url: paths[0], author_name: nickname, author_id: user.id,
-      author_avatar: input.authorAvatar || null, caption: input.caption, hashtags: input.hashtags,
+      author_avatar: input.authorAvatar || null,
+      caption: input.caption.trim(),
+      hashtags: normalizeHashtags(input.hashtags),
       location: input.location || null, is_public: input.isPublic,
       comments_allowed: input.commentsAllowed, custom_pose_allowed: input.customPoseAllowed,
       pose_template: (first?.poseTemplate as Json | undefined) || null,
