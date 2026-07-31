@@ -686,6 +686,9 @@ function Guide({ onClose, closing }: { onClose: () => void; closing: boolean }) 
         <GuideItem number="10" title="카메라가 열리지 않을 때">
           처음 촬영할 때 카메라 권한을 <b>허용</b>해 주세요. 거부했다면 휴대폰 설정 또는 브라우저 사이트 설정에서 카메라를 허용한 뒤 다시 시도하세요. 카메라가 없는 PC에서는 데모 화면으로도 기능을 살펴볼 수 있어요.
         </GuideItem>
+        <GuideItem number="11" title="포즈 인식이 잘 되도록 촬영하기">
+          카메라에 너무 가까이 서 있거나 여러 사람이 서로 붙어 있으면 AI가 어느 한 사람의 관절을 안정적으로 찾기 어려울 수 있어요. 한 사람이 화면에 충분히 보이도록 거리를 두고, 다른 사람과 간격을 둔 뒤 다시 시도해 주세요.
+        </GuideItem>
       </div>
       <button className="primary guide-start" onClick={onClose} aria-label="홈으로 돌아가 바다사진 시작하기"><Camera /> 이제 바다사진 시작하기</button>
     </section>
