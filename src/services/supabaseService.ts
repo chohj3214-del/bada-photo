@@ -144,6 +144,7 @@ export async function publishPublicPost(input: PublishPostInput) {
       post_id: post.id,
       image_url,
       sort_order,
+      crop_data: (input.photos[sort_order]?.cropData as Json | undefined) || null,
       pose_template: (input.photos[sort_order]?.poseTemplate as Json | undefined) || null,
       pose_status: (input.customPoseAllowed ? (input.photos[sort_order]?.poseTemplate ? "ready" : "failed") : "pending") as "pending" | "ready" | "failed",
     })));

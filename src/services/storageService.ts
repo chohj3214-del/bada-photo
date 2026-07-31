@@ -1,5 +1,6 @@
 export type StoredPhoto = { id: string; dataUrl: string; place: string; poseName?: string; createdAt: number };
 import type { PoseTemplate } from './poseDetectionService';
+import type { CropData } from './photoAnalysisService';
 export type UploadedPhoto = {
   id: string;
   dataUrl: string;
@@ -7,6 +8,7 @@ export type UploadedPhoto = {
   location?: string;
   customPoseAllowed?: boolean;
   poseTemplate?: PoseTemplate;
+  cropData?: CropData;
   authorName?: string;
   authorId?: string;
   authorAvatar?: string;

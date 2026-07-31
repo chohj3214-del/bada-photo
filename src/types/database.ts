@@ -16,9 +16,9 @@ export type Database = {
         Relationships: [];
       };
       post_images: {
-        Row: { id: string; post_id: string; image_url: string; sort_order: number; pose_template: Json | null; pose_status: "pending" | "ready" | "failed"; created_at: string };
-        Insert: { id?: string; post_id: string; image_url: string; sort_order?: number; pose_template?: Json | null; pose_status?: "pending" | "ready" | "failed"; created_at?: string };
-        Update: Partial<{ image_url: string; sort_order: number; pose_template: Json | null; pose_status: "pending" | "ready" | "failed" }>;
+        Row: { id: string; post_id: string; image_url: string; sort_order: number; crop_data: Json | null; pose_template: Json | null; pose_status: "pending" | "ready" | "failed"; created_at: string };
+        Insert: { id?: string; post_id: string; image_url: string; sort_order?: number; crop_data?: Json | null; pose_template?: Json | null; pose_status?: "pending" | "ready" | "failed"; created_at?: string };
+        Update: Partial<{ image_url: string; sort_order: number; crop_data: Json | null; pose_template: Json | null; pose_status: "pending" | "ready" | "failed" }>;
         Relationships: [];
       };
       comments: {

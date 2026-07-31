@@ -6,6 +6,17 @@ export type EditSettings = {
   temperature: number;
   horizon: number;
 };
+export type CropData = { x: number; y: number; width: number; height: number; ratio: string };
+export async function renderCrop(dataUrl: string, crop: CropData): Promise<string> {
+  const image = new Image(); image.src = dataUrl; await image.decode();
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * crop.width));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * crop.height));
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas is unavailable");
+  context.drawImage(image, image.naturalWidth * crop.x, image.naturalHeight * crop.y, image.naturalWidth * crop.width, image.naturalHeight * crop.height, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", .94);
+}
 
 export type EditRecommendation = {
   brightness: number;

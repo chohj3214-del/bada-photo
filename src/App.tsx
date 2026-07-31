@@ -57,6 +57,8 @@ import {
   analysePhotoForEdit,
   defaultEditSettings,
   getRecommendedCaption,
+  renderCrop,
+  type CropData,
   type EditRecommendation,
   type EditSettings,
 } from "./services/photoAnalysisService";
@@ -69,6 +71,8 @@ declare global {
 type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my" | "editor" | "post";
 type PostDraft = {
   images: string[];
+  originalImages: string[];
+  crops: (CropData | undefined)[];
   activeIndex: number;
   edits: EditSettings[];
   caption: string;
@@ -190,6 +194,8 @@ function App() {
     if (!images.length) return;
     setDraft({
       images,
+      originalImages: images,
+      crops: images.map(() => undefined),
       activeIndex: 0,
       edits: images.map(() => ({ ...defaultEditSettings })),
       caption: getRecommendedCaption(0),
@@ -207,7 +213,7 @@ function App() {
     try {
       const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
       const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
-      const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl).catch(() => null)) ?? undefined : undefined })));
+      const photos = await Promise.all(draft.images.map(async (dataUrl, index) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, cropData: draft.crops[index], customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl).catch(() => null)) ?? undefined : undefined })));
       await publishPublicPost({
         photos,
         authorName,
@@ -687,6 +693,7 @@ function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; on
   const [analysisError, setAnalysisError] = useState("");
   const [analysisAttempt, setAnalysisAttempt] = useState(0);
   const [compare, setCompare] = useState(50);
+  const [cropping, setCropping] = useState(false);
   const activeEdit = draft.edits[draft.activeIndex];
   const analyse = async (attempt = analysisAttempt) => { if (isAnalysing) return; setIsAnalysing(true); setAnalysisError(""); try { setRecommendation(await analysePhotoForEdit(draft.images[draft.activeIndex], attempt)); } catch { setAnalysisError("다시 분석하지 못했어요. 한 번 더 시도해 주세요."); } finally { setIsAnalysing(false); } };
   // The active photo is the only trigger; retry attempts are started directly by its button.
@@ -696,6 +703,11 @@ function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; on
   const applyAi = () => { if (recommendation) updateEdit({ mode: "ai", brightness: recommendation.brightness, saturation: recommendation.saturation, contrast: recommendation.contrast, temperature: recommendation.temperature }); };
   const reset = () => updateEdit({ ...defaultEditSettings });
   const filter = `brightness(${100 + activeEdit.brightness}%) saturate(${100 + activeEdit.saturation}%) contrast(${100 + activeEdit.contrast}%)`;
+  if (cropping) return <CropEditor image={draft.originalImages[draft.activeIndex]} initialCrop={draft.crops[draft.activeIndex]} onCancel={() => setCropping(false)} onApply={async (crop) => {
+    const output = await renderCrop(draft.originalImages[draft.activeIndex], crop);
+    onChange({ ...draft, images: draft.images.map((image, index) => index === draft.activeIndex ? output : image), crops: draft.crops.map((item, index) => index === draft.activeIndex ? crop : item) });
+    setCropping(false);
+  }} />;
   return <section className="page editor-page page-enter">
     <header><button onClick={onBack} aria-label="사진 선택으로 돌아가기"><ChevronLeft /></button><b>사진 편집</b><button className="header-action" onClick={onNext} aria-label="새 게시물로 다음 단계">다음</button></header>
     <div className="edit-preview" style={{ transform: `rotate(${activeEdit.horizon}deg)` }}>
@@ -706,10 +718,26 @@ function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; on
     <input className="compare-range" type="range" min="0" max="100" value={compare} onChange={(event) => setCompare(Number(event.target.value))} aria-label="원본과 보정 비교 비율" />
     <div className="original-toggle"><button onClick={reset} className={activeEdit.mode === "original" ? "selected" : ""}>원본</button><button onClick={applyAi} className={activeEdit.mode !== "original" ? "selected" : ""}>보정</button></div>
     {draft.images.length > 1 && <div className="edit-pagination"><button disabled={draft.activeIndex === 0} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex - 1 })}>‹ 이전</button><b>{draft.activeIndex + 1} / {draft.images.length}</b><button disabled={draft.activeIndex === draft.images.length - 1} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex + 1 })}>다음 ›</button></div>}
-    <div className="edit-tools">{([ ["original", "원본"], ["ai", "AI 보정"], ["brightness", "밝기"], ["tone", "색감"], ["horizon", "수평"], ["crop", "자르기"] ] as [EditSettings["mode"], string][]).map(([mode, label]) => <button key={mode} onClick={() => mode === "ai" ? applyAi() : updateEdit({ mode })} className={activeEdit.mode === mode ? "selected" : ""} aria-label={`${label} 편집 선택`}><span>{mode === "ai" ? <Sparkles /> : mode === "brightness" ? "☀" : mode === "tone" ? "◉" : mode === "horizon" ? "⌁" : mode === "crop" ? "⌗" : "▣"}</span>{label}</button>)}</div>
+    <div className="edit-tools">{([ ["original", "원본"], ["ai", "AI 보정"], ["brightness", "밝기"], ["tone", "색감"], ["horizon", "수평"], ["crop", "자르기"] ] as [EditSettings["mode"], string][]).map(([mode, label]) => <button key={mode} onClick={() => mode === "crop" ? setCropping(true) : mode === "ai" ? applyAi() : updateEdit({ mode })} className={activeEdit.mode === mode ? "selected" : ""} aria-label={`${label} 편집 선택`}><span>{mode === "ai" ? <Sparkles /> : mode === "brightness" ? "☀" : mode === "tone" ? "◉" : mode === "horizon" ? "⌁" : mode === "crop" ? "⌗" : "▣"}</span>{label}</button>)}</div>
     {(activeEdit.mode === "brightness" || activeEdit.mode === "tone" || activeEdit.mode === "horizon") && <label className="edit-slider">{activeEdit.mode === "brightness" ? "밝기" : activeEdit.mode === "tone" ? "색감" : "수평"}<input type="range" min={activeEdit.mode === "horizon" ? -3 : -20} max={activeEdit.mode === "horizon" ? 3 : 20} step={activeEdit.mode === "horizon" ? .5 : 1} value={activeEdit.mode === "brightness" ? activeEdit.brightness : activeEdit.mode === "tone" ? activeEdit.saturation : activeEdit.horizon} onChange={(event) => updateEdit(activeEdit.mode === "brightness" ? { brightness: Number(event.target.value) } : activeEdit.mode === "tone" ? { saturation: Number(event.target.value) } : { horizon: Number(event.target.value) })} /></label>}
     <section className="ai-recommendation"><div><Sparkles /><b>AI 추천 보정</b><button onClick={() => { const next = analysisAttempt + 1; setAnalysisAttempt(next); void analyse(next); }} disabled={isAnalysing} aria-label="사진 다시 추천">↻ 다시 추천</button><button onClick={reset} aria-label="추천 보정 되돌리기">되돌리기</button></div><p>{isAnalysing ? "사진을 다시 분석하고 있어요…" : analysisError || recommendation?.message || "사진을 살펴보고 있어요."}</p><ul><li>밝기 <b>+{recommendation?.brightness ?? 8}</b></li><li>대비 <b>+{recommendation?.contrast ?? 6}</b></li><li>바다 색감 <b>+{recommendation?.saturation ?? 12}</b></li><li>색온도 <b>+{recommendation?.temperature ?? 3}</b></li></ul><button className="apply-recommendation" onClick={applyAi} disabled={isAnalysing || !recommendation}>추천값 적용</button></section>
     <button className="primary editor-next" onClick={onNext} aria-label="사진 편집 후 새 게시물 작성"><Camera /> 다음: 게시물 작성</button>
+  </section>;
+}
+function CropEditor({ image, initialCrop, onCancel, onApply }: { image: string; initialCrop?: CropData; onCancel: () => void; onApply: (crop: CropData) => void }) {
+  const [crop, setCrop] = useState<CropData>(initialCrop || { x: .08, y: .08, width: .84, height: .84, ratio: "자유" });
+  const ratios: Record<string, number | null> = { "AI 추천": null, "자유": null, "1:1": 1, "4:5": .8, "3:4": .75, "16:9": 16 / 9 };
+  const choose = (ratio: string) => setCrop((current) => {
+    if (ratio === "AI 추천") return { x: .08, y: .05, width: .84, height: .84, ratio };
+    const value = ratios[ratio]; if (!value) return { ...current, ratio };
+    const width = Math.min(.9, current.width); const height = Math.min(.9, width / value);
+    return { x: (1 - width) / 2, y: (1 - height) / 2, width, height, ratio };
+  });
+  return <section className="crop-page">
+    <header><button onClick={onCancel}>취소</button><b>사진 자르기</b><button className="header-action" onClick={() => onApply(crop)}>적용</button></header>
+    <div className="crop-stage"><img src={image} alt="자르기 사진" /><div className="crop-shade" /><div className="crop-box" style={{ left: `${crop.x * 100}%`, top: `${crop.y * 100}%`, width: `${crop.width * 100}%`, height: `${crop.height * 100}%` }}><i /><i /><i /><i /></div></div>
+    <div className="crop-adjust"><label>가로 위치<input type="range" min="0" max={Math.max(0, 1 - crop.width)} step=".01" value={crop.x} onChange={(e) => setCrop({ ...crop, x: Number(e.target.value) })} /></label><label>세로 위치<input type="range" min="0" max={Math.max(0, 1 - crop.height)} step=".01" value={crop.y} onChange={(e) => setCrop({ ...crop, y: Number(e.target.value) })} /></label><label>크기<input type="range" min=".35" max=".95" step=".01" value={crop.width} onChange={(e) => setCrop({ ...crop, width: Number(e.target.value), height: crop.ratio in ratios && ratios[crop.ratio] ? Math.min(.95, Number(e.target.value) / (ratios[crop.ratio] || 1)) : crop.height })} /></label></div>
+    <div className="crop-ratios">{Object.keys(ratios).map((ratio) => <button key={ratio} className={crop.ratio === ratio ? "selected" : ""} onClick={() => choose(ratio)}>{ratio}</button>)}</div><button className="crop-reset" onClick={() => setCrop({ x: .08, y: .08, width: .84, height: .84, ratio: "자유" })}>초기화</button>
   </section>;
 }
 function NewPost({ draft, onChange, onBack, onPublish }: { draft: PostDraft; onChange: (draft: PostDraft) => void; onBack: () => void; onPublish: () => void }) {
