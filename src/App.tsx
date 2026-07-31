@@ -40,10 +40,12 @@ import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
 import {
   deletePublicComment,
+  deletePublicPost,
   downloadPostReferenceImage,
   getSavedPostIds,
   getSavedPosts,
   getPublicComments,
+  getCurrentUserId,
   getPublicPosts,
   publishPublicComment,
   publishPublicPost,
@@ -349,6 +351,7 @@ function Home({
     commentsAllowed: boolean;
     caption?: string;
     hashtags: string[];
+    authorId?: string;
   } | null>(null);
   type CommentItem = { id?: string; text: string; author: "me" | "other" };
   const [comments, setComments] = useState<Record<string, CommentItem[]>>(() => {
@@ -363,6 +366,9 @@ function Home({
   const [savingPost, setSavingPost] = useState(false);
   const [saveOverride, setSaveOverride] = useState<boolean | undefined>();
   const [saveNotice, setSaveNotice] = useState("");
+  const [deletingPost, setDeletingPost] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
+  useEffect(() => { void getCurrentUserId().then(setCurrentUserId).catch(() => undefined); }, []);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
   useEffect(() => {
     if (!initialDetail || detailClosing) return;
@@ -518,7 +524,7 @@ function Home({
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed, caption, hashtags }); setCaptionExpanded(false); setSaveOverride(undefined); setSaveNotice(""); setCommentsOpen(false); void loadRemoteComments(id); }
+                if (!detailClosing) { setDetail({ id, account, image: img, customAllowed, likeCount: count, commentCount, commentsAllowed, caption, hashtags, authorId: uploaded.find((photo) => `uploaded-${photo.id}` === id)?.authorId }); setCaptionExpanded(false); setSaveOverride(undefined); setSaveNotice(""); setCommentsOpen(false); void loadRemoteComments(id); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -580,6 +586,7 @@ function Home({
               void onToggleSaved(detail.id).then((result) => { setSaveOverride(result.saved); setSaveNotice(result.saved ? "저장했어요." : "저장을 취소했어요."); }).catch(() => { setSaveOverride(before); setSaveNotice("저장하지 못했어요. 다시 시도해 주세요."); }).finally(() => setSavingPost(false));
             }} aria-label="게시물 저장 또는 저장 취소" aria-pressed={saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))} disabled={savingPost}><FolderHeart fill={(saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))) ? "currentColor" : "none"}/><span>{(saveOverride ?? savedPostIds.has(detail.id.replace(/^uploaded-remote-/, ""))) ? "저장됨" : "저장"}</span></button>
             {detail.customAllowed && <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image, uploadedPoseByDisplayId.get(detail.id))} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>}
+            {detail.id.startsWith("uploaded-remote-") && detail.authorId === currentUserId && <button disabled={deletingPost} onClick={() => { if (!window.confirm("이 게시물을 삭제할까요? 삭제한 게시물은 복구할 수 없어요.")) return; setDeletingPost(true); void deletePublicPost(detail.id).then(() => { setSaveNotice("게시물을 삭제했어요."); closeViewer(); onRefreshSocial(); }).catch(() => setSaveNotice("게시물을 삭제하지 못했어요. 다시 시도해 주세요.")).finally(() => setDeletingPost(false)); }} aria-label="게시물 삭제"><Trash2 /><span>{deletingPost ? "삭제 중" : "게시물 삭제"}</span></button>}
           </div>
           {saveNotice && <p className="save-notice" role="status">{saveNotice}</p>}
           {commentsOpen && <div className={`sheet-layer ${commentsClosing ? "is-closing" : ""}`} onClick={closeComments}>

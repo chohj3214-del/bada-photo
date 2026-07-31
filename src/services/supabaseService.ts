@@ -41,6 +41,7 @@ async function requireUser() {
   if (!user) throw new Error("사용자 세션을 준비하지 못했어요.");
   return user;
 }
+export async function getCurrentUserId() { return (await requireUser()).id; }
 
 async function resolveImageUrl(path: string) {
   if (/^https?:\/\//.test(path)) return path;
@@ -165,6 +166,19 @@ export async function updateMyProfile(input: { nickname: string; bio: string; av
     avatar_url: input.avatarUrl || null,
   });
   if (error) throw error;
+}
+
+export async function deletePublicPost(id: string) {
+  const user = await requireUser(); const postId = remoteId(id);
+  const { data: post, error: postError } = await supabase.from("posts").select("id, author_id, image_url").eq("id", postId).maybeSingle();
+  if (postError || !post || post.author_id !== user.id) throw new Error("삭제 권한이 없어요.");
+  const { data: images, error: imagesError } = await supabase.from("post_images").select("image_url").eq("post_id", postId);
+  if (imagesError) throw imagesError;
+  const paths = [...new Set([post.image_url, ...(images || []).map((image) => image.image_url)])];
+  const { error: storageError } = await supabase.storage.from(bucket).remove(paths);
+  if (storageError) throw storageError;
+  const { data: deleted, error: deleteError } = await supabase.from("posts").delete().eq("id", postId).eq("author_id", user.id).select("id");
+  if (deleteError || !deleted?.length) throw deleteError ?? new Error("게시물을 삭제하지 못했어요.");
 }
 
 export async function getPublicComments(id: string): Promise<PublicComment[]> {
