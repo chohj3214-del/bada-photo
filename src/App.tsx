@@ -47,6 +47,7 @@ declare global {
 }
 type Screen = "onboarding" | "home" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
+const APP_VERSION = "2026-07-31.1";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
@@ -81,6 +82,14 @@ function App() {
   useEffect(() => {
     void refresh();
     void getUploads().then(setUploaded).catch(() => setUploaded([]));
+  }, []);
+  useEffect(() => {
+    void fetch(`${assetBase}app-version.json?check=${Date.now()}`, { cache: "no-store" })
+      .then((response) => response.json())
+      .then(({ version }: { version: string }) => {
+        if (version !== APP_VERSION) window.location.reload();
+      })
+      .catch(() => undefined);
   }, []);
   const capture = async (data: string) => {
     const link = document.createElement("a");
