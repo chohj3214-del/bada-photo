@@ -166,14 +166,17 @@ function App() {
   };
   const publishDraft = async () => {
     if (!draft) return;
-    const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
-    const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
-    const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl)) ?? undefined : undefined })));
-    await Promise.all(photos.map((photo) => publishPublicPost(photo, authorName)));
-    const remote = await getPublicPosts().catch(() => []);
-    setUploaded([...(await getUploads()), ...remote]);
-    setDraft(null);
-    setScreen("home");
+    try {
+      const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
+      const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
+      const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl).catch(() => null)) ?? undefined : undefined })));
+      await Promise.all(photos.map((photo) => publishPublicPost(photo, authorName)));
+      await refreshUploads();
+      setDraft(null);
+      setScreen("home");
+    } catch {
+      window.alert("게시물 업로드에 실패했어요. 인터넷 연결과 Supabase 설정을 확인한 뒤 다시 시도해 주세요.");
+    }
   };
   return (
     <main className={`app-shell ${dark ? "dark" : ""}`}>
