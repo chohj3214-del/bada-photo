@@ -38,8 +38,7 @@ export function PoseOverlay({ guide, composition, active }: { guide?: PoseGuide;
     {Object.entries(joints).map(([name, point]) => point && <circle key={name} cx={toScreen(point).x} cy={toScreen(point).y} r="1.5" />)}
   </g>;
   const box = composition?.bounds;
-  // Composition coordinates are relative to the full camera frame, not the padded control layer.
-  const style = box ? { position: "fixed" as const, left: `${box.x * 100}vw`, top: `${box.y * 100}dvh`, width: `${box.width * 100}vw`, height: `${box.height * 100}dvh`, inset: "auto" } : undefined;
+  const style = box ? { left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.width * 100}%`, height: `${box.height * 100}%`, inset: "auto" } : undefined;
   return <svg className="pose-overlay" style={style} viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="참고 포즈와 현재 인물 관절 안내">
     {draw(guide.joints, "reference-skeleton")}
     {current && draw(current, "current-skeleton")}
