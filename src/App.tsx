@@ -24,9 +24,7 @@ import { SeaLionMascot } from "./components/SeaLionMascot";
 import { PoseOverlay } from "./components/PoseOverlay";
 import {
   analyseReferencePose,
-  analyseUploadedComposition,
   analyseUploadedPose,
-  type CompositionTemplate,
   type PoseGuide,
 } from "./services/poseDetectionService";
 import {
@@ -96,7 +94,6 @@ const cards: [string, string, string, number, string?][] = [
 function App() {
   const [screen, setScreen] = useState<Screen>(() => localStorage.getItem("bada-onboarding") === "done" ? "home" : "onboarding");
   const [guide, setGuide] = useState<PoseGuide>();
-  const [composition, setComposition] = useState<CompositionTemplate>();
   const [place, setPlace] = useState("자유 촬영");
   const [referenceImage, setReferenceImage] = useState("");
   const [saved, setSaved] = useState<StoredPhoto[]>([]);
@@ -117,21 +114,18 @@ function App() {
     setPlace(p);
     setReferenceImage(image);
     setGuide(storedGuide);
-    setComposition(undefined);
     setScreen("camera");
-    if (p === "자유 촬영") return;
+    if (p === "자유 촬영" || storedGuide) return;
     void (async () => {
       try {
         const source = p.startsWith("uploaded-remote-")
           ? await downloadPostReferenceImage(p).catch(() => image)
           : image;
-        let next: PoseGuide | null;
-        let nextComposition: CompositionTemplate | null = null;
-        if (source) [next, nextComposition] = await Promise.all([analyseUploadedPose(source, "참고 사진 포즈"), analyseUploadedComposition(source)]);
-        else next = await analyseReferencePose(p);
+        const next = source
+          ? await analyseUploadedPose(source, "참고 사진 포즈")
+          : await analyseReferencePose(p);
         if (next && requestId === cameraAnalysisRequest.current) {
           setGuide(next);
-          setComposition(nextComposition || undefined);
           if (p.startsWith("uploaded-remote-")) void savePostImagePoseTemplate(p, next).catch(() => undefined);
         }
       } catch {
@@ -271,7 +265,6 @@ function App() {
       {screen === "camera" && (
         <CameraScreen
           guide={guide}
-          composition={composition}
           referenceImage={referenceImage}
           latestPhoto={saved[0]?.dataUrl}
           onClose={() => setScreen("home")}
@@ -809,7 +802,6 @@ function Nav({
 }
 function CameraScreen({
   guide,
-  composition,
   referenceImage,
   latestPhoto,
   onClose,
@@ -817,7 +809,6 @@ function CameraScreen({
   onGallery,
 }: {
   guide?: PoseGuide;
-  composition?: CompositionTemplate;
   referenceImage: string;
   latestPhoto?: string;
   onClose: () => void;
@@ -949,7 +940,7 @@ function CameraScreen({
               <i />
               <i />
             </div>
-            <PoseOverlay guide={guide} composition={composition} active />
+            <PoseOverlay guide={guide} active />
             {guide && referenceImage && (
               <img
                 className="reference-photo"
