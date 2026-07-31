@@ -45,9 +45,9 @@ declare global {
     zoom?: number;
   }
 }
-type Screen = "onboarding" | "home" | "camera" | "saved" | "my";
+type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
-const APP_VERSION = "2026-07-31.2";
+const APP_VERSION = "2026-07-31.3";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
@@ -125,8 +125,10 @@ function App() {
           dark={dark}
           onToggleDark={toggleDark}
           onBrowseModeChange={setBrowseMode}
+          onGuide={() => setScreen("guide")}
         />
       )}{" "}
+      {screen === "guide" && <Guide onClose={() => setScreen("home")} />}
       {screen === "camera" && (
         <CameraScreen
           place={place}
@@ -178,6 +180,7 @@ function Home({
   dark,
   onToggleDark,
   onBrowseModeChange,
+  onGuide,
 }: {
   onCustom: (p: string, image?: string) => void;
   uploaded: UploadedPhoto[];
@@ -186,6 +189,7 @@ function Home({
   dark: boolean;
   onToggleDark: () => void;
   onBrowseModeChange: (active: boolean) => void;
+  onGuide: () => void;
 }) {
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -280,7 +284,13 @@ function Home({
           </button>
         </div>
       )}
-      {!showAll && <section className="mascot-intro"><SeaLionMascot /><div className="mascot-speech"><b>안녕하세요! 바다사자 바다랑이에요.</b><p>마음에 드는 사진의 포즈를 골라<br/>더 멋진 바다사진을 촬영해 보세요!</p></div></section>}
+      {!showAll && (
+        <button className="guide-entry" onClick={onGuide} aria-label="앱 사용 가이드 열기">
+          <Sparkles />
+          <span><b>앱 사용 가이드</b><small>바다사진을 처음 이용하시나요? 순서대로 안내해 드려요.</small></span>
+          <ChevronLeft />
+        </button>
+      )}
       <div className="section-title">
         <h2>
           <Flame /> 커스텀 사진
@@ -379,6 +389,57 @@ function Home({
       )}
     </div>
   );
+}
+function Guide({ onClose }: { onClose: () => void }) {
+  return (
+    <section className="page guide-page">
+      <header>
+        <button onClick={onClose} aria-label="가이드 닫기"><ChevronLeft /></button>
+        <b>앱 사용 가이드</b>
+        <span />
+      </header>
+      <section className="guide-hero">
+        <SeaLionMascot small />
+        <div><b>바다사진, 이렇게 사용해 보세요!</b><p>사진은 내 기기 안에서 다루며, 인물의 외모나 몸매를 평가하지 않아요.</p></div>
+      </section>
+      <div className="guide-list">
+        <GuideItem number="1" title="커스텀 사진 둘러보기">
+          홈의 사진을 눌러 다른 이용자의 사진에 좋아요를 누르거나 댓글을 남길 수 있어요. 상단 돋보기로 계정을 검색하고, <b>전체보기</b>를 누르면 모든 커스텀 사진을 볼 수 있어요.
+        </GuideItem>
+        <GuideItem number="2" title="마음에 드는 포즈로 촬영하기">
+          사진 오른쪽 아래의 <b>커스텀</b>을 누르면 그 사진의 인물 자세를 참고하는 촬영 화면으로 이동해요. 사진 속 배경을 복사하는 기능이 아니라, 사람의 위치와 자세를 맞춰 보는 촬영 가이드예요.
+        </GuideItem>
+        <GuideItem number="3" title="자유롭게 촬영하기">
+          아래 가운데의 큰 <b>촬영</b> 버튼을 누르면 포즈 참고 없이 카메라를 열 수 있어요. 자유 촬영에는 참고 사진 배경이나 포즈 틀이 표시되지 않아요.
+        </GuideItem>
+        <GuideItem number="4" title="카메라 화면의 AI 가이드">
+          카메라에서 <b>AI 가이드 ON</b> 상태이면 삼등분 구도선, 수평계, 포즈 틀과 바다사자의 안내가 보여요. 포즈 틀 밖에 있으면 위치를 옮기라는 안내를 하고, 잘 맞으면 촬영을 권해요. 이 점수는 외모 평가가 아니라 관절 위치와 구도의 정렬 정도만 알려줘요.
+        </GuideItem>
+        <GuideItem number="5" title="확대와 카메라 전환">
+          화면 아래의 <b>1× · 1.5× · 2×</b>를 눌러 확대를 바꿀 수 있어요. 오른쪽 아래의 회전 아이콘으로 전면·후면 카메라를 바꿉니다. 기기마다 지원하는 확대 배율은 조금 다를 수 있어요.
+        </GuideItem>
+        <GuideItem number="6" title="사진 촬영과 저장">
+          가운데 셔터를 누르면 사진이 바로 기기에 내려받아지고, 동시에 앱의 <b>갤러리</b>에도 저장돼요. 연속 촬영이 가능하며, 왼쪽 아래의 작은 사진을 누르면 갤러리로 바로 이동합니다.
+        </GuideItem>
+        <GuideItem number="7" title="갤러리 관리">
+          아래 메뉴의 <b>갤러리</b>에서 촬영한 사진을 다시 볼 수 있어요. 각 사진의 휴지통 버튼을 눌러 원하는 사진만 골라 삭제할 수 있어요.
+        </GuideItem>
+        <GuideItem number="8" title="내 사진 올리기와 댓글">
+          홈 아래의 <b>내 갤러리에서 사진 추가</b>를 눌러 내 기기의 사진을 커스텀 사진으로 올릴 수 있어요. 올린 사진에는 내 닉네임이 표시되며, 휴지통으로 개별 삭제할 수 있어요. 내 댓글만 직접 지울 수 있고, 다른 사람 댓글은 신고 시 안전 필터가 확인해요.
+        </GuideItem>
+        <GuideItem number="9" title="MY와 화면 설정">
+          아래 메뉴의 <b>MY</b>에서 이름과 프로필 사진을 바꿀 수 있어요. 홈 오른쪽 위 달·해 아이콘으로 앱 다크 모드를 켜거나 끌 수 있어요. 휴대폰 시스템 다크 모드와 관계없이 앱 색상은 안정적으로 표시돼요.
+        </GuideItem>
+        <GuideItem number="10" title="카메라가 열리지 않을 때">
+          처음 촬영할 때 카메라 권한을 <b>허용</b>해 주세요. 거부했다면 휴대폰 설정 또는 브라우저 사이트 설정에서 카메라를 허용한 뒤 다시 시도하세요. 카메라가 없는 PC에서는 데모 화면으로도 기능을 살펴볼 수 있어요.
+        </GuideItem>
+      </div>
+      <button className="primary guide-start" onClick={onClose} aria-label="홈으로 돌아가 바다사진 시작하기"><Camera /> 이제 바다사진 시작하기</button>
+    </section>
+  );
+}
+function GuideItem({ number, title, children }: { number: string; title: string; children: React.ReactNode }) {
+  return <article className="guide-item"><span>{number}</span><div><h2>{title}</h2><p>{children}</p></div></article>;
 }
 function Nav({
   goHome,
