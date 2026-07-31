@@ -51,6 +51,7 @@ import {
   subscribeToSocialChanges,
   toggleSavedPost,
   togglePublicLike,
+  updateMyProfile,
 } from "./services/supabaseService";
 import {
   analysePhotoForEdit,
@@ -1055,11 +1056,25 @@ function My({
     () => localStorage.getItem("bada-profile-avatar") || "",
   );
   const [editing, setEditing] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(
+    () => localStorage.getItem("bada-profile-status") || "부산 바다여행자",
+  );
+  const [editingStatus, setEditingStatus] = useState(false);
+  const syncProfile = (nextName = name, nextStatus = statusMessage, nextAvatar = avatar) =>
+    void updateMyProfile({ nickname: nextName, bio: nextStatus, avatarUrl: nextAvatar }).catch(() => undefined);
   const saveName = () => {
     const next = name.trim() || "바다랑";
     setName(next);
     localStorage.setItem("bada-profile-name", next);
+    syncProfile(next);
     setEditing(false);
+  };
+  const saveStatus = () => {
+    const next = statusMessage.trim() || "부산 바다여행자";
+    setStatusMessage(next);
+    localStorage.setItem("bada-profile-status", next);
+    syncProfile(name, next);
+    setEditingStatus(false);
   };
   const changeAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1069,6 +1084,7 @@ function My({
       const value = String(reader.result);
       setAvatar(value);
       localStorage.setItem("bada-profile-avatar", value);
+      syncProfile(name, statusMessage, value);
     };
     reader.readAsDataURL(file);
   };
@@ -1114,7 +1130,14 @@ function My({
               </button>
             </>
           )}
-          <p>부산 바다여행자</p>
+          {editingStatus ? (
+            <div className="status-edit">
+              <input aria-label="상태 메시지" value={statusMessage} maxLength={60} onChange={(e) => setStatusMessage(e.target.value)} />
+              <button onClick={saveStatus}>저장</button>
+            </div>
+          ) : (
+            <div className="status-message"><p>{statusMessage}</p><button onClick={() => setEditingStatus(true)} aria-label="상태 메시지 변경">상태 메시지 변경</button></div>
+          )}
         </div>
       </div>
       <section className="my-card">

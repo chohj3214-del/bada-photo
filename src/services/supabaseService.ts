@@ -155,6 +155,17 @@ export async function publishPublicPost(input: PublishPostInput) {
   }
 }
 
+export async function updateMyProfile(input: { nickname: string; bio: string; avatarUrl?: string }) {
+  const user = await requireUser();
+  const { error } = await supabase.from("profiles").upsert({
+    user_id: user.id,
+    nickname: input.nickname.trim() || "바다랑",
+    bio: input.bio.trim() || "바다사진 사용자",
+    avatar_url: input.avatarUrl || null,
+  });
+  if (error) throw error;
+}
+
 export async function getPublicComments(id: string): Promise<PublicComment[]> {
   const user = await requireUser();
   const { data, error } = await supabase
