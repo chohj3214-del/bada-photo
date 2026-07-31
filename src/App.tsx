@@ -30,9 +30,13 @@ import {
 } from "./services/poseDetectionService";
 import {
   deletePhoto,
+  deleteUpload,
   getPhotos,
+  getUploads,
   savePhoto,
+  saveUpload,
   type StoredPhoto,
+  type UploadedPhoto,
 } from "./services/storageService";
 import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
@@ -55,7 +59,7 @@ function App() {
   const [place, setPlace] = useState("자유 촬영");
   const [referenceImage, setReferenceImage] = useState("");
   const [saved, setSaved] = useState<StoredPhoto[]>([]);
-  const [uploaded, setUploaded] = useState<string[]>([]);
+  const [uploaded, setUploaded] = useState<UploadedPhoto[]>([]);
   const [browseMode, setBrowseMode] = useState(false);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
@@ -76,6 +80,7 @@ function App() {
       .catch(() => setSaved([]));
   useEffect(() => {
     void refresh();
+    void getUploads().then(setUploaded).catch(() => setUploaded([]));
   }, []);
   const capture = async (data: string) => {
     const link = document.createElement("a");
@@ -106,10 +111,8 @@ function App() {
         <Home
           onCustom={openCamera}
           uploaded={uploaded}
-          onUpload={(url) => setUploaded((x) => [url, ...x])}
-          onRemoveUpload={(url) =>
-            setUploaded((x) => x.filter((item) => item !== url))
-          }
+          onUpload={async (dataUrl) => { await saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now() }); setUploaded(await getUploads()); }}
+          onRemoveUpload={async (id) => { await deleteUpload(id); setUploaded(await getUploads()); }}
           dark={dark}
           onToggleDark={toggleDark}
           onBrowseModeChange={setBrowseMode}
@@ -168,9 +171,9 @@ function Home({
   onBrowseModeChange,
 }: {
   onCustom: (p: string, image?: string) => void;
-  uploaded: string[];
-  onUpload: (u: string) => void;
-  onRemoveUpload: (u: string) => void;
+  uploaded: UploadedPhoto[];
+  onUpload: (u: string) => void | Promise<void>;
+  onRemoveUpload: (id: string) => void | Promise<void>;
   dark: boolean;
   onToggleDark: () => void;
   onBrowseModeChange: (active: boolean) => void;
@@ -213,8 +216,8 @@ function Home({
   };
   const displayCards: [string, string, string, number][] = [
     ...uploaded.map(
-      (u, i) =>
-        [`uploaded-${i}`, `@${nickname}`, u, 0] as [
+      (u) =>
+        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0] as [
           string,
           string,
           string,
@@ -301,7 +304,7 @@ function Home({
                 {id.startsWith("uploaded-") && (
                 <button
                   className="remove-upload"
-                  onClick={() => onRemoveUpload(img)}
+                  onClick={() => onRemoveUpload(id.replace("uploaded-", ""))}
                   aria-label="내가 올린 사진 삭제"
                 >
                   <Trash2 />
