@@ -41,7 +41,7 @@ import {
 } from "./services/storageService";
 import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
-import { getPublicPosts, publishPublicPost } from "./services/supabaseService";
+import { getPublicComments, getPublicPosts, publishPublicComment, publishPublicPost, togglePublicLike } from "./services/supabaseService";
 import {
   analysePhotoForEdit,
   defaultEditSettings,
@@ -290,6 +290,7 @@ function Home({
     setLikes((current) => {
       const next = { ...current, [id]: !current[id] };
       localStorage.setItem("bada-likes", JSON.stringify(next));
+      if (id.startsWith("uploaded-remote-")) void togglePublicLike(id.replace("uploaded-remote-", "")).catch(() => undefined);
       return next;
     });
   const saveComments = (next: Record<string, CommentItem[]>) => {
