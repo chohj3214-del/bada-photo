@@ -288,14 +288,6 @@ function Home({
     setComments(next);
     localStorage.setItem("bada-comments", JSON.stringify(next));
   };
-  const closeDetail = () => {
-    if (detailClosing) return;
-    setDetailClosing(true);
-    window.setTimeout(() => {
-      setDetail(null);
-      setDetailClosing(false);
-    }, 260);
-  };
   const closeViewer = () => {
     if (detailClosing) return;
     setDetailClosing(true);
@@ -537,13 +529,19 @@ function GuideItem({ number, title, children }: { number: string; title: string;
 }
 function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; onChange: (draft: PostDraft) => void; onBack: () => void; onNext: () => void }) {
   const [recommendation, setRecommendation] = useState<EditRecommendation | null>(null);
+  const [isAnalysing, setIsAnalysing] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
+  const [analysisAttempt, setAnalysisAttempt] = useState(0);
   const [compare, setCompare] = useState(50);
   const activeEdit = draft.edits[draft.activeIndex];
-  useEffect(() => { void analysePhotoForEdit(draft.images[draft.activeIndex]).then(setRecommendation); }, [draft.activeIndex, draft.images]);
+  const analyse = async (attempt = analysisAttempt) => { if (isAnalysing) return; setIsAnalysing(true); setAnalysisError(""); try { setRecommendation(await analysePhotoForEdit(draft.images[draft.activeIndex], attempt)); } catch { setAnalysisError("다시 분석하지 못했어요. 한 번 더 시도해 주세요."); } finally { setIsAnalysing(false); } };
+  // The active photo is the only trigger; retry attempts are started directly by its button.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { void analyse(analysisAttempt); }, [draft.activeIndex]);
   const updateEdit = (next: Partial<EditSettings>) => onChange({ ...draft, edits: draft.edits.map((edit, index) => index === draft.activeIndex ? { ...edit, ...next } : edit) });
-  const applyAi = () => { if (recommendation) updateEdit({ mode: "ai", brightness: recommendation.brightness, saturation: recommendation.saturation, horizon: recommendation.horizon }); };
+  const applyAi = () => { if (recommendation) updateEdit({ mode: "ai", brightness: recommendation.brightness, saturation: recommendation.saturation, contrast: recommendation.contrast, temperature: recommendation.temperature }); };
   const reset = () => updateEdit({ ...defaultEditSettings });
-  const filter = `brightness(${100 + activeEdit.brightness}%) saturate(${100 + activeEdit.saturation}%)`;
+  const filter = `brightness(${100 + activeEdit.brightness}%) saturate(${100 + activeEdit.saturation}%) contrast(${100 + activeEdit.contrast}%)`;
   return <section className="page editor-page page-enter">
     <header><button onClick={onBack} aria-label="사진 선택으로 돌아가기"><ChevronLeft /></button><b>사진 편집</b><button className="header-action" onClick={onNext} aria-label="새 게시물로 다음 단계">다음</button></header>
     <div className="edit-preview" style={{ transform: `rotate(${activeEdit.horizon}deg)` }}>
@@ -556,7 +554,7 @@ function PhotoEditor({ draft, onChange, onBack, onNext }: { draft: PostDraft; on
     {draft.images.length > 1 && <div className="edit-pagination"><button disabled={draft.activeIndex === 0} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex - 1 })}>‹ 이전</button><b>{draft.activeIndex + 1} / {draft.images.length}</b><button disabled={draft.activeIndex === draft.images.length - 1} onClick={() => onChange({ ...draft, activeIndex: draft.activeIndex + 1 })}>다음 ›</button></div>}
     <div className="edit-tools">{([ ["original", "원본"], ["ai", "AI 보정"], ["brightness", "밝기"], ["tone", "색감"], ["horizon", "수평"], ["crop", "자르기"] ] as [EditSettings["mode"], string][]).map(([mode, label]) => <button key={mode} onClick={() => mode === "ai" ? applyAi() : updateEdit({ mode })} className={activeEdit.mode === mode ? "selected" : ""} aria-label={`${label} 편집 선택`}><span>{mode === "ai" ? <Sparkles /> : mode === "brightness" ? "☀" : mode === "tone" ? "◉" : mode === "horizon" ? "⌁" : mode === "crop" ? "⌗" : "▣"}</span>{label}</button>)}</div>
     {(activeEdit.mode === "brightness" || activeEdit.mode === "tone" || activeEdit.mode === "horizon") && <label className="edit-slider">{activeEdit.mode === "brightness" ? "밝기" : activeEdit.mode === "tone" ? "색감" : "수평"}<input type="range" min={activeEdit.mode === "horizon" ? -3 : -20} max={activeEdit.mode === "horizon" ? 3 : 20} step={activeEdit.mode === "horizon" ? .5 : 1} value={activeEdit.mode === "brightness" ? activeEdit.brightness : activeEdit.mode === "tone" ? activeEdit.saturation : activeEdit.horizon} onChange={(event) => updateEdit(activeEdit.mode === "brightness" ? { brightness: Number(event.target.value) } : activeEdit.mode === "tone" ? { saturation: Number(event.target.value) } : { horizon: Number(event.target.value) })} /></label>}
-    <section className="ai-recommendation"><div><Sparkles /><b>AI 추천 보정</b><button onClick={reset} aria-label="추천 보정 되돌리기">되돌리기</button></div><p>{recommendation?.message || "사진을 살펴보고 있어요."}</p><ul><li>수평 <b>+{recommendation?.horizon ?? 1.5}°</b></li><li>밝기 <b>+{recommendation?.brightness ?? 8}</b></li><li>바다 색감 <b>+{recommendation?.saturation ?? 12}</b></li></ul><button className="apply-recommendation" onClick={applyAi}>추천값 적용</button></section>
+    <section className="ai-recommendation"><div><Sparkles /><b>AI 추천 보정</b><button onClick={() => { const next = analysisAttempt + 1; setAnalysisAttempt(next); void analyse(next); }} disabled={isAnalysing} aria-label="사진 다시 추천">↻ 다시 추천</button><button onClick={reset} aria-label="추천 보정 되돌리기">되돌리기</button></div><p>{isAnalysing ? "사진을 다시 분석하고 있어요…" : analysisError || recommendation?.message || "사진을 살펴보고 있어요."}</p><ul><li>밝기 <b>+{recommendation?.brightness ?? 8}</b></li><li>대비 <b>+{recommendation?.contrast ?? 6}</b></li><li>바다 색감 <b>+{recommendation?.saturation ?? 12}</b></li><li>색온도 <b>+{recommendation?.temperature ?? 3}</b></li></ul><button className="apply-recommendation" onClick={applyAi} disabled={isAnalysing || !recommendation}>추천값 적용</button></section>
     <button className="primary editor-next" onClick={onNext} aria-label="사진 편집 후 새 게시물 작성"><Camera /> 다음: 게시물 작성</button>
   </section>;
 }

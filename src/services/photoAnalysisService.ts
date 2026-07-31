@@ -2,13 +2,16 @@ export type EditSettings = {
   mode: "original" | "ai" | "brightness" | "tone" | "horizon" | "crop";
   brightness: number;
   saturation: number;
+  contrast: number;
+  temperature: number;
   horizon: number;
 };
 
 export type EditRecommendation = {
   brightness: number;
   saturation: number;
-  horizon: number;
+  contrast: number;
+  temperature: number;
   message: string;
 };
 
@@ -16,11 +19,18 @@ export const defaultEditSettings: EditSettings = {
   mode: "original",
   brightness: 0,
   saturation: 0,
+  contrast: 0,
+  temperature: 0,
   horizon: 0,
 };
 
 // External AI can replace this function later. It only analyses pixels on this device.
-export async function analysePhotoForEdit(dataUrl: string): Promise<EditRecommendation> {
+export async function analysePhotoForEdit(dataUrl: string, attempt = 0): Promise<EditRecommendation> {
+  return analysePhotoForEditDemo(dataUrl, attempt);
+}
+
+// Demo-only implementation. Replace this function with a real on-device AI service later.
+export async function analysePhotoForEditDemo(dataUrl: string, attempt = 0): Promise<EditRecommendation> {
   try {
     const image = new Image();
     image.src = dataUrl;
@@ -44,9 +54,10 @@ export async function analysePhotoForEdit(dataUrl: string): Promise<EditRecommen
     const average = brightness / count;
     const brightnessOffset = Math.max(-8, Math.min(8, Math.round((150 - average) / 7)));
     const seaTone = Math.max(4, Math.min(14, Math.round((blue - red) / count / 3 + 9)));
-    return { brightness: brightnessOffset, saturation: seaTone, horizon: 1.5, message: "수평을 맞추고 바다 색감을 또렷하게 추천했어요!" };
+    const subtleShift = ((Math.round(average) + attempt) % 3) - 1;
+    return { brightness: brightnessOffset + subtleShift, saturation: seaTone, contrast: 6 + subtleShift, temperature: 3 + subtleShift, message: "사진의 밝기와 바다 색감을 자연스럽게 추천했어요!" };
   } catch {
-    return { brightness: 8, saturation: 12, horizon: 1.5, message: "밝기와 바다 색감을 자연스럽게 추천했어요!" };
+    return { brightness: 8, saturation: 12, contrast: 6, temperature: 3, message: "사진의 밝기와 바다 색감을 자연스럽게 추천했어요!" };
   }
 }
 
