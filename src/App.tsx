@@ -255,6 +255,8 @@ function Home({
   });
   const [comment, setComment] = useState("");
   const [detailClosing, setDetailClosing] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsClosing, setCommentsClosing] = useState(false);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -282,6 +284,16 @@ function Home({
       setDetail(null);
       setDetailClosing(false);
     }, 260);
+  };
+  const closeViewer = () => {
+    if (detailClosing) return;
+    setDetailClosing(true);
+    window.setTimeout(() => { setDetail(null); setCommentsOpen(false); setDetailClosing(false); }, 260);
+  };
+  const closeComments = () => {
+    if (commentsClosing) return;
+    setCommentsClosing(true);
+    window.setTimeout(() => { setCommentsOpen(false); setCommentsClosing(false); }, 260);
   };
   const displayCards: [string, string, string, number][] = [
     ...uploaded.map(
@@ -359,7 +371,7 @@ function Home({
             <button
               className="photo-open"
               onClick={() => {
-                if (!detailClosing) setDetail({ id, account, image: img });
+                if (!detailClosing) { setDetail({ id, account, image: img }); setCommentsOpen(false); }
               }}
               aria-label={`${account} 사진 댓글 보기`}
             >
@@ -403,11 +415,20 @@ function Home({
         <input type="file" accept="image/*" multiple onChange={pick} />
       </label>
       {detail && (
-        <div className={`sheet-layer ${detailClosing ? "is-closing" : ""}`} onClick={closeDetail}>
+        <section className={`photo-detail-viewer ${detailClosing ? "is-closing" : ""}`}>
+          <header className="detail-header"><div><SeaLionMascot small /><b>{detail.account}</b></div><button onClick={closeViewer} aria-label="사진 상세 닫기"><X /></button></header>
+          <div className="detail-image-wrap"><img src={detail.image} alt={`${detail.account}의 커스텀 사진`} /></div>
+          <div className="detail-actions">
+            <button onClick={() => toggleLike(detail.id)} aria-label="사진 좋아요"><Heart fill={likes[detail.id] ? "currentColor" : "none"}/><span>{(cards.find(([id]) => id === detail.id)?.[3] ?? 0) + (likes[detail.id] ? 1 : 0)}</span></button>
+            <button onClick={() => { setCommentsClosing(false); setCommentsOpen(true); }} aria-label="댓글 열기"><MessageCircle /><span>{(comments[detail.id] || []).length}</span></button>
+            <button onClick={() => window.alert("사진을 저장했어요.")} aria-label="사진 저장"><FolderHeart /><span>저장</span></button>
+            <button className="detail-custom" onClick={() => onCustom(detail.id, detail.image)} aria-label="이 포즈로 커스텀 촬영"><Camera /><span>커스텀 촬영</span></button>
+          </div>
+          {commentsOpen && <div className={`sheet-layer ${commentsClosing ? "is-closing" : ""}`} onClick={closeComments}>
         <section className="comment-sheet" onClick={(event) => event.stopPropagation()}>
           <button
             className="sheet-close"
-            onClick={closeDetail}
+            onClick={closeComments}
             aria-label="댓글 닫기"
           >
             <X />
@@ -445,7 +466,8 @@ function Home({
             </button>
           </form>
         </section>
-        </div>
+          </div>}
+        </section>
       )}
     </div>
   );
