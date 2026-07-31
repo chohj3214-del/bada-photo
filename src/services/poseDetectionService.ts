@@ -13,6 +13,7 @@ export type PoseGuide = {
   joints: Partial<Record<PoseJoint, Point>>;
 };
 export type PoseTemplate = PoseGuide;
+export type CompositionTemplate = { version: 1; aspectRatio: number; bounds: { x: number; y: number; width: number; height: number }; centre: Point; headTop: number; bottom: number; margins: { left: number; right: number; top: number; bottom: number }; coverage: "full" | "upper"; mirrored: boolean };
 export type PoseReading = { score: number; offsetX: number; offsetY: number; joints: PoseGuide["joints"] };
 
 const MODEL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task";
@@ -88,6 +89,13 @@ export async function analyseUploadedPose(source: string | Blob, label = "업로
       return normalized(result.landmarks[0] || [], label);
     } catch { return null; }
   } finally { bitmap?.close(); }
+}
+export async function analyseUploadedComposition(source: string | Blob): Promise<CompositionTemplate | null> {
+  let bitmap: ImageBitmap | null = null;
+  try { bitmap = await sourceToBitmap(source); const result = (await prepareImageLandmarker()).detect(bitmap); const points = (result.landmarks[0] || []).filter((point) => (point.visibility ?? 0) >= .45); if (points.length < 7) return null;
+    const xs = points.map((point) => point.x), ys = points.map((point) => point.y); const x = Math.max(0, Math.min(...xs)), y = Math.max(0, Math.min(...ys)), right = Math.min(1, Math.max(...xs)), bottom = Math.min(1, Math.max(...ys));
+    return { version: 1, aspectRatio: bitmap.width / bitmap.height, bounds: { x, y, width: right - x, height: bottom - y }, centre: { x: (x + right) / 2, y: (y + bottom) / 2 }, headTop: y, bottom, margins: { left: x, right: 1 - right, top: y, bottom: 1 - bottom }, coverage: bottom > .82 && y < .2 ? "full" : "upper", mirrored: false };
+  } catch { return null; } finally { bitmap?.close(); }
 }
 function mirrored(joints: PoseGuide["joints"]): PoseGuide["joints"] {
   return Object.fromEntries(Object.entries(joints).map(([key, point]) => [key, point ? { ...point, x: -point.x } : point])) as PoseGuide["joints"];
