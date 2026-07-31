@@ -47,7 +47,7 @@ declare global {
 }
 type Screen = "onboarding" | "home" | "guide" | "camera" | "saved" | "my";
 const assetBase = import.meta.env.BASE_URL;
-const APP_VERSION = "2026-07-31.4";
+const APP_VERSION = "2026-07-31.5";
 const cards: [string, string, string, number][] = [
   ["standing-wave", "@seaside.jun", `${assetBase}custom-photos/standing-wave.jpg`, 245],
   ["sitting-beach", "@ocean.day", `${assetBase}custom-photos/sitting-beach.jpg`, 328],
@@ -62,6 +62,7 @@ function App() {
   const [saved, setSaved] = useState<StoredPhoto[]>([]);
   const [uploaded, setUploaded] = useState<UploadedPhoto[]>([]);
   const [browseMode, setBrowseMode] = useState(false);
+  const [guideClosing, setGuideClosing] = useState(false);
   const [dark, setDark] = useState(
     () => localStorage.getItem("bada-dark") === "true",
   );
@@ -113,6 +114,14 @@ function App() {
       localStorage.setItem("bada-dark", String(next));
       return next;
     });
+  const closeGuide = () => {
+    if (guideClosing) return;
+    setGuideClosing(true);
+    window.setTimeout(() => {
+      setScreen("home");
+      setGuideClosing(false);
+    }, 260);
+  };
   return (
     <main className={`app-shell ${dark ? "dark" : ""}`}>
       {screen === "onboarding" && <Onboarding onStart={() => { localStorage.setItem("bada-onboarding", "done"); setScreen("home"); }} />}
@@ -125,10 +134,13 @@ function App() {
           dark={dark}
           onToggleDark={toggleDark}
           onBrowseModeChange={setBrowseMode}
-          onGuide={() => setScreen("guide")}
+          onGuide={() => {
+            setGuideClosing(false);
+            setScreen("guide");
+          }}
         />
       )}{" "}
-      {screen === "guide" && <Guide onClose={() => setScreen("home")} />}
+      {screen === "guide" && <Guide closing={guideClosing} onClose={closeGuide} />}
       {screen === "camera" && (
         <CameraScreen
           place={place}
@@ -169,7 +181,7 @@ function App() {
   );
 }
 function Onboarding({ onStart }: { onStart: () => void }) {
-  return <section className="onboarding"><SeaLionMascot /><h1>바다를 더 멋지게 담아보세요</h1><p>마음에 드는 바다 사진의 포즈를 골라<br/>AI 가이드와 함께 나만의 사진을 촬영할 수 있어요.</p><button className="primary" onClick={onStart}>준비되셨나요?</button></section>;
+  return <section className="onboarding page-enter"><SeaLionMascot /><h1>바다를 더 멋지게 담아보세요</h1><p>마음에 드는 바다 사진의 포즈를 골라<br/>AI 가이드와 함께 나만의 사진을 촬영할 수 있어요.</p><button className="primary" onClick={onStart}>준비되셨나요?</button></section>;
 }
 
 function Home({
@@ -208,6 +220,7 @@ function Home({
     return Object.fromEntries(Object.entries(saved).map(([id, items]) => [id, (items as (string | CommentItem)[]).map((item) => typeof item === "string" ? { text: item, author: "other" as const } : item)]));
   });
   const [comment, setComment] = useState("");
+  const [detailClosing, setDetailClosing] = useState(false);
   const nickname = localStorage.getItem("bada-profile-name") || "바다랑";
   const pick = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
@@ -227,6 +240,14 @@ function Home({
     setComments(next);
     localStorage.setItem("bada-comments", JSON.stringify(next));
   };
+  const closeDetail = () => {
+    if (detailClosing) return;
+    setDetailClosing(true);
+    window.setTimeout(() => {
+      setDetail(null);
+      setDetailClosing(false);
+    }, 260);
+  };
   const displayCards: [string, string, string, number][] = [
     ...uploaded.map(
       (u) =>
@@ -242,7 +263,7 @@ function Home({
     account.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div className="page home">
+    <div className="page home page-enter">
       <header>
         <div className="brand">
           <SeaLionMascot small />
@@ -302,7 +323,9 @@ function Home({
           <article className="photo-card" key={id + img}>
             <button
               className="photo-open"
-              onClick={() => setDetail({ id, account, image: img })}
+              onClick={() => {
+                if (!detailClosing) setDetail({ id, account, image: img });
+              }}
               aria-label={`${account} 사진 댓글 보기`}
             >
               <img src={img} alt={`${account} 업로드 사진`} />
@@ -345,10 +368,11 @@ function Home({
         <input type="file" accept="image/*" onChange={pick} />
       </label>
       {detail && (
-        <section className="comment-sheet">
+        <div className={`sheet-layer ${detailClosing ? "is-closing" : ""}`} onClick={closeDetail}>
+        <section className="comment-sheet" onClick={(event) => event.stopPropagation()}>
           <button
             className="sheet-close"
-            onClick={() => setDetail(null)}
+            onClick={closeDetail}
             aria-label="댓글 닫기"
           >
             <X />
@@ -386,13 +410,14 @@ function Home({
             </button>
           </form>
         </section>
+        </div>
       )}
     </div>
   );
 }
-function Guide({ onClose }: { onClose: () => void }) {
+function Guide({ onClose, closing }: { onClose: () => void; closing: boolean }) {
   return (
-    <section className="page guide-page">
+    <section className={`page guide-page ${closing ? "is-closing" : ""}`}>
       <header>
         <button onClick={onClose} aria-label="가이드 닫기"><ChevronLeft /></button>
         <b>앱 사용 가이드</b>
@@ -551,7 +576,7 @@ function CameraScreen({
   };
   return (
     <section
-      className={"camera-screen " + (guide ? "custom-camera" : "plain-camera")}
+      className={"camera-screen page-enter " + (guide ? "custom-camera" : "plain-camera")}
     >
       <div className={"camera-bg " + (status === "live" ? "live" : "")}>
         <video
@@ -693,7 +718,7 @@ function Saved({
   onDelete: (id: string) => void;
 }) {
   return (
-    <section className="page saved">
+    <section className="page saved page-enter">
       <header>
         <button onClick={onHome} aria-label="홈으로 돌아가기">
           <ChevronLeft />
@@ -763,7 +788,7 @@ function My({
     reader.readAsDataURL(file);
   };
   return (
-    <section className="page my">
+    <section className="page my page-enter">
       <header>
         <button onClick={onHome} aria-label="홈으로 돌아가기">
           <ChevronLeft />
