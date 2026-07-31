@@ -404,7 +404,7 @@ function Home({
               </button>
             </div>
               <div className="card-bottom">
-                {id.startsWith("uploaded-") && (
+                {id.startsWith("uploaded-") && !id.startsWith("uploaded-remote-") && (
                 <button
                   className="remove-upload"
                   onClick={() => onRemoveUpload(id.replace("uploaded-", ""))}
