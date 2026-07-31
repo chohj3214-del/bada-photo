@@ -35,7 +35,6 @@ import {
   getPhotos,
   getUploads,
   savePhoto,
-  saveUpload,
   type StoredPhoto,
   type UploadedPhoto,
 } from "./services/storageService";
@@ -170,7 +169,7 @@ function App() {
     const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
     const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
     const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl)) ?? undefined : undefined })));
-    await Promise.all(photos.map((photo) => Promise.all([saveUpload(photo), publishPublicPost(photo, authorName)])));
+    await Promise.all(photos.map((photo) => publishPublicPost(photo, authorName)));
     const remote = await getPublicPosts().catch(() => []);
     setUploaded([...(await getUploads()), ...remote]);
     setDraft(null);
