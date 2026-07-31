@@ -31,6 +31,7 @@ button:active{transform:scale(.96)}button:disabled{opacity:.55;cursor:not-allowe
 .app-shell:has(.photo-detail-viewer) .bottom-nav{display:none}
 .card-identity{display:flex;align-items:center;gap:3px;min-width:0}.photo-card .card-top .card-place-name{padding:0;background:none;font-size:11px;white-space:nowrap;color:#d9f8fb}
 .camera-top .flash-on{color:#ffe670;background:#ffffff24;border-radius:14px}.flash-notice{position:absolute;top:88px;right:16px;margin:0;padding:9px 12px;background:#0b1f34dd;border-radius:12px;color:#fff;font-size:12px;box-shadow:0 4px 14px #0005}
+.camera-top button:disabled{opacity:.38;cursor:not-allowed}
 .guide-page{position:absolute;z-index:12;inset:0;overflow-y:auto;min-height:100%;padding-bottom:40px;animation:guide-enter var(--motion-sheet) var(--ease-emphasized) both}.guide-page.is-closing{pointer-events:none;animation:guide-exit 240ms var(--ease-standard) forwards}@keyframes guide-enter{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}@keyframes guide-exit{to{opacity:0;transform:translateY(16px)}}
 .onboarding>.mascot,.guide-hero .mascot,.empty .mascot{animation:mascot-float 3.6s ease-in-out infinite}@keyframes mascot-float{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;transition-duration:1ms!important;scroll-behavior:auto!important}.onboarding>.mascot,.guide-hero .mascot,.empty .mascot{animation:none!important}}

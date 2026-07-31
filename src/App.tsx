@@ -637,6 +637,7 @@ function CameraScreen({
   const [zoom, setZoom] = useState(1);
   const [permissionAttempt, setPermissionAttempt] = useState(0);
   const [torchOn, setTorchOn] = useState(false);
+  const [torchUnsupported, setTorchUnsupported] = useState(false);
   const [flashNotice, setFlashNotice] = useState("");
   const cameraGuide = getCameraGuide(guide);
   useEffect(() => {
@@ -676,7 +677,8 @@ function CameraScreen({
     const track = (video.current?.srcObject as MediaStream | undefined)?.getVideoTracks()[0];
     const capabilities = track?.getCapabilities?.() as MediaTrackCapabilities & { torch?: boolean } | undefined;
     if (!track || !capabilities?.torch) {
-      setFlashNotice("이 기기에서는 플래시를 지원하지 않아요.");
+      setFlashNotice("해당 기기에는 플래시 기능이 작동하지 않습니다.");
+      setTorchUnsupported(true);
       window.setTimeout(() => setFlashNotice(""), 2200);
       return;
     }
@@ -731,7 +733,7 @@ function CameraScreen({
           >
             <Sparkles /> AI 가이드 {guideOn ? "ON" : "OFF"}
           </button>
-          <button className={torchOn ? "flash-on" : ""} onClick={() => void toggleTorch()} aria-label="플래시 켜기 또는 끄기" aria-pressed={torchOn}>
+          <button className={torchOn ? "flash-on" : ""} onClick={() => void toggleTorch()} aria-label="플래시 켜기 또는 끄기" aria-pressed={torchOn} disabled={torchUnsupported}>
             <Zap />
           </button>
           <button aria-label="추가 메뉴">
