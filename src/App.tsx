@@ -41,6 +41,7 @@ import {
 } from "./services/storageService";
 import { getCameraGuide } from "./services/cameraGuideService";
 import { isInappropriateComment } from "./services/commentModerationService";
+import { getPublicPosts, publishPublicPost } from "./services/supabaseService";
 import {
   analysePhotoForEdit,
   defaultEditSettings,
@@ -103,7 +104,7 @@ function App() {
       .catch(() => setSaved([]));
   useEffect(() => {
     void refresh();
-    void getUploads().then(setUploaded).catch(() => setUploaded([]));
+    void Promise.all([getUploads(), getPublicPosts().catch(() => [])]).then(([local, remote]) => setUploaded([...local, ...remote])).catch(() => setUploaded([]));
   }, []);
   const capture = async (data: string) => {
     const filename = `bada-photo-${Date.now()}.jpg`;
@@ -163,8 +164,11 @@ function App() {
   const publishDraft = async () => {
     if (!draft) return;
     const location = draft.location === "장소 없음" ? undefined : draft.location.split("·").pop()?.trim();
-    await Promise.all(draft.images.map(async (dataUrl) => saveUpload({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl)) ?? undefined : undefined })));
-    setUploaded(await getUploads());
+    const authorName = localStorage.getItem("bada-profile-name") || "바다랑";
+    const photos = await Promise.all(draft.images.map(async (dataUrl) => ({ id: crypto.randomUUID(), dataUrl, createdAt: Date.now(), location, customPoseAllowed: draft.customPoseAllowed, poseTemplate: draft.customPoseAllowed ? (await analyseUploadedPose(dataUrl)) ?? undefined : undefined })));
+    await Promise.all(photos.map((photo) => Promise.all([saveUpload(photo), publishPublicPost(photo, authorName)])));
+    const remote = await getPublicPosts().catch(() => []);
+    setUploaded([...(await getUploads()), ...remote]);
     setDraft(null);
     setScreen("home");
   };
@@ -305,7 +309,7 @@ function Home({
   const displayCards: [string, string, string, number, string, boolean][] = [
     ...uploaded.map(
       (u) =>
-        [`uploaded-${u.id}`, `@${nickname}`, u.dataUrl, 0, u.location || "", u.customPoseAllowed === true] as [
+        [`uploaded-${u.id}`, `@${u.authorName || nickname}`, u.dataUrl, 0, u.location || "", u.customPoseAllowed === true] as [
           string,
           string,
           string,

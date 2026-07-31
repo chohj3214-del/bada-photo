@@ -1,6 +1,6 @@
 export type StoredPhoto = { id: string; dataUrl: string; place: string; poseName?: string; createdAt: number };
 import type { PoseTemplate } from './poseDetectionService';
-export type UploadedPhoto = { id: string; dataUrl: string; createdAt: number; location?: string; customPoseAllowed?: boolean; poseTemplate?: PoseTemplate };
+export type UploadedPhoto = { id: string; dataUrl: string; createdAt: number; location?: string; customPoseAllowed?: boolean; poseTemplate?: PoseTemplate; authorName?: string };
 const DB = 'bada-photo-db'; const STORE = 'photos'; const UPLOADS = 'uploads';
 function db() { return new Promise<IDBDatabase>((resolve, reject) => { const req = indexedDB.open(DB, 2); req.onupgradeneeded = () => { if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE, { keyPath: 'id' }); if (!req.result.objectStoreNames.contains(UPLOADS)) req.result.createObjectStore(UPLOADS, { keyPath: 'id' }); }; req.onsuccess = () => resolve(req.result); req.onerror = () => reject(req.error); }); }
 export async function savePhoto(photo: StoredPhoto) { const d = await db(); await new Promise<void>((resolve, reject) => { const r = d.transaction(STORE, 'readwrite').objectStore(STORE).put(photo); r.onsuccess = () => resolve(); r.onerror = () => reject(r.error); }); d.close(); }
